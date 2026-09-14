@@ -84,17 +84,20 @@ class GeminiProvider:
     def _generate_with_rate_limit_retry(client: Any, *, max_attempts: int = 6, **kwargs: Any) -> Any:
         # Free-tier keys allow only a few requests per minute. Wait for the
         # server-provided retry delay on per-minute 429s; fail fast on daily quota.
+        # 503 UNAVAILABLE ("high demand") is transient, so back off and retry it too.
         for attempt in range(1, max_attempts + 1):
             try:
                 return client.models.generate_content(**kwargs)
             except Exception as exc:
                 message = str(exc)
-                if "RESOURCE_EXHAUSTED" not in message or "PerDay" in message or attempt == max_attempts:
+                rate_limited = "RESOURCE_EXHAUSTED" in message and "PerDay" not in message
+                overloaded = "UNAVAILABLE" in message
+                if not (rate_limited or overloaded) or attempt == max_attempts:
                     raise
                 match = re.search(r"retry in ([\d.]+)s", message)
-                delay = float(match.group(1)) if match else 60.0
-                print(f"[gemini] rate limited, retrying in {delay + 1:.0f}s (attempt {attempt}/{max_attempts})", flush=True)
-                time.sleep(delay + 1)
+                delay = float(match.group(1)) + 1 if match else (60.0 if rate_limited else 5.0 * attempt)
+                print(f"[gemini] {'rate limited' if rate_limited else 'overloaded'}, retrying in {delay:.0f}s (attempt {attempt}/{max_attempts})", flush=True)
+                time.sleep(delay)
         raise RuntimeError("unreachable")
 
     def complete(
@@ -125,23 +128,6 @@ class GeminiProvider:
             config_kwargs["tools"] = [types.Tool(function_declarations=declarations)]
 
         client = genai.Client(api_key=api_key)
-        import time
-        max_retries = 6
-        resp = None
-        for attempt in range(max_retries):
-            try:
-                resp = client.models.generate_content(
-                    model=model or self.default_model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(**config_kwargs),
-                )
-                break
-            except Exception as exc:
-                if ("429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc)) and attempt < max_retries - 1:
-                    time.sleep(4 * (attempt + 1))
-                    continue
-                raise
-
         resp = self._generate_with_rate_limit_retry(
             client,
             model=model or self.default_model,

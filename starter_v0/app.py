@@ -1,15 +1,17 @@
 """
-IT Helpdesk Agent — Streamlit Live Chat UI
-==========================================
+IT Helpdesk Agent — Streamlit chat UI
+=====================================
 Tái sử dụng trực tiếp run_model_tool_loop từ chat.py (KHÔNG viết agent loop mới).
-Đầy đủ các thông tin audit:
-  1. User request
-  2. Final response
-  3. Từng tool name và args
-  4. Tool result / error
-  5. Round / status
-  6. Artifact version và prompt/tools hashes
-  7. Transcript path
+
+- Khung chat dạng tin nhắn: user bên phải, agent bên trái; ví dụ chọn nhanh khi chưa có tin nhắn.
+- Sidebar: cuộc trò chuyện mới, 5 lịch sử chat gần nhất (+ "Xem thêm"), thông số kỹ thuật
+  (provider, model, version, history window, max tool rounds) và công tắc "Chi tiết kỹ thuật"
+  để xem tool name, arguments, result/error, round/status, artifact version và transcript path.
+- Version v0–v3 chạy đúng snapshot artifact trong artifacts/versions/<version>/ (hash khớp
+  artifacts/version_log.csv).
+- Lịch sử chat chính là transcript JSON trong starter_v0/transcripts/ (cùng format chat.py).
+  Một transcript gắn với một cấu hình; nếu cấu hình đổi, tin nhắn tiếp theo được ghi sang
+  transcript mới có `continued_from`, vẫn giữ ngữ cảnh hội thoại.
 
 Khởi chạy:
   cd starter_v0
@@ -18,9 +20,11 @@ Khởi chạy:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).parent
 if str(ROOT) not in sys.path:
@@ -28,515 +32,370 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 
+from chat import now_iso, run_model_tool_loop, safe_slug, trim_history, write_transcript
 from env_loader import load_lab_env
 from providers import make_provider
 from tools import load_tool_declarations, to_openai_tools
-from versioning import build_artifact_version, artifact_version_dict
-from chat import (
-    run_model_tool_loop,
-    write_transcript,
-    trim_history,
-    now_iso,
-    safe_slug,
-)
+from versioning import artifact_version_dict, build_artifact_version
 
-ARTIFACTS_DIR = ROOT / "artifacts"
 TRANSCRIPTS_DIR = ROOT / "transcripts"
-SYSTEM_PROMPT_PATH = ARTIFACTS_DIR / "system_prompt.md"
-TOOLS_PATH = ARTIFACTS_DIR / "tools.yaml"
-PROVIDERS = ["openrouter", "openai", "anthropic", "gemini"]
+VERSIONS_DIR = ROOT / "artifacts" / "versions"
 VERSIONS = ["v0", "v1", "v2", "v3"]
 
+ASSISTANT_NAME = "Northstar IT Assistant"
+PROVIDERS = ["gemini", "openrouter", "openai", "anthropic"]
+# Team-wide eval model: gemini-3.5-flash/3.6-flash free tier only allows ~20 requests/day.
+DEFAULT_MODELS = {"gemini": "gemini-3.1-flash-lite"}
+HISTORY_PAGE_SIZE = 5
+MAX_CHAIN_DEPTH = 20
+EXAMPLES = {
+    ":material/vpn_lock: Trạng thái VPN": "VPN production có đang gặp sự cố không?",
+    ":material/laptop: Kiểm tra laptop": "Kiểm tra Wi-Fi trên laptop của mình giúp nhé.",
+    ":material/badge: Tra cứu nhân viên": "Tra cứu tài khoản nhân viên EMP-1003 và thiết bị được cấp.",
+    ":material/menu_book: Hướng dẫn Outlook": "Tìm hướng dẫn cấu hình Outlook profile trên Windows 11.",
+    ":material/confirmation_number: Tạo ticket": "Tạo ticket lỗi VPN trên máy LT-204 mức high.",
+}
+RESUMABLE_STATUSES = {"answered", "waiting_for_user", "max_tool_rounds"}
+
 load_lab_env(ROOT)
+st.set_page_config(page_title=ASSISTANT_NAME, page_icon="🖥️")
 
-st.set_page_config(
-    page_title="IT Helpdesk Agent — Live Chat & Tool Audit",
-    page_icon="🖥️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
-# ── Custom CSS ────────────────────────────────────────────────────────────────
-st.markdown("""
+# ── Messaging layout: user bubbles on the right, agent bubbles on the left ────
+if st.context.theme.type == "dark":
+    user_bg, user_fg, bot_bg, bot_border = "#2563eb", "#ffffff", "#1c2128", "#30363d"
+else:
+    user_bg, user_fg, bot_bg, bot_border = "#2563eb", "#ffffff", "#f1f3f6", "#e1e4e8"
+st.html(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
-
-/* Dark theme accents */
-section[data-testid="stSidebar"] {
-    background: linear-gradient(165deg, #0d1117 0%, #161b22 60%, #0d1117 100%);
-    border-right: 1px solid #30363d;
-}
-section[data-testid="stSidebar"] * { color: #c9d1d9; }
-section[data-testid="stSidebar"] h2 { color: #58a6ff !important; font-weight: 700; font-size: 1.1rem; }
-
-.main .block-container {
-    background: #0d1117;
-    padding: 1.5rem 2.5rem;
-    max-width: 1200px;
-}
-
-/* Header */
-.app-header {
-    background: linear-gradient(135deg, #161b22 0%, #1c2128 50%, #161b22 100%);
-    border: 1px solid #30363d;
-    border-radius: 12px;
-    padding: 1.2rem 1.8rem;
-    margin-bottom: 1.2rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-}
-.header-left { display: flex; align-items: center; gap: 14px; }
-.header-title { color: #f0f6fc; font-size: 1.4rem; margin: 0; font-weight: 700; }
-.header-sub { color: #8b949e; font-size: 0.85rem; margin: 2px 0 0 0; }
-
-.loop-badge {
-    background: #121d2f;
-    border: 1px solid #1f6feb;
-    border-radius: 20px;
-    padding: 4px 12px;
-    font-size: 0.76rem;
-    color: #58a6ff;
-    font-weight: 600;
-    font-family: 'JetBrains Mono', monospace;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-/* Message bubbles */
-.chat-row { margin: 0.8rem 0; }
-.chat-meta {
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    margin-bottom: 5px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.meta-user { color: #7ee787; }
-.meta-agent { color: #58a6ff; }
-
-.chat-user {
-    background: linear-gradient(135deg, #12381f 0%, #1a4d2e 100%);
-    border: 1px solid #238636;
-    border-radius: 12px 12px 2px 12px;
-    padding: 0.85rem 1.2rem;
-    color: #f0f6fc;
-    font-size: 0.95rem;
-    line-height: 1.55;
-    box-shadow: 0 2px 8px rgba(35,134,54,0.15);
-}
-
-.chat-agent {
-    background: linear-gradient(135deg, #161b22 0%, #1c2128 100%);
-    border: 1px solid #30363d;
-    border-radius: 12px 12px 12px 2px;
-    padding: 0.85rem 1.2rem;
-    color: #c9d1d9;
-    font-size: 0.95rem;
-    line-height: 1.55;
-}
-
-/* Tool Audit Cards */
-.tool-audit-box {
-    background: #090d13;
-    border: 1px solid #30363d;
-    border-left: 4px solid #f0883e;
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
-    margin: 0.45rem 0;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.82rem;
-}
-.tool-title-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-}
-.tool-name { color: #f0883e; font-weight: 700; font-size: 0.88rem; }
-.tool-args { color: #e6edf3; background: #161b22; padding: 4px 8px; border-radius: 4px; margin: 4px 0; }
-.tool-res-ok { color: #7ee787; background: #0e2015; border: 1px solid #238636; border-radius: 4px; padding: 6px 8px; margin-top: 5px; }
-.tool-res-err { color: #f85149; background: #2b1111; border: 1px solid #da3633; border-radius: 4px; padding: 6px 8px; margin-top: 5px; }
-
-/* Status Badges */
-.badge { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
-.badge-answered  { background: #196127; color: #7ee787; border: 1px solid #238636; }
-.badge-waiting   { background: #3d2b00; color: #e3b341; border: 1px solid #9e6a03; }
-.badge-maxrounds { background: #3d0f0f; color: #f85149; border: 1px solid #6e1010; }
-.badge-error     { background: #4c1212; color: #ff7b72; border: 1px solid #b62324; }
-.badge-round     { background: #1c2d42; color: #79c0ff; border: 1px solid #1f6feb; }
-
-/* Info panels */
-.card-sidebar {
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 0.75rem 0.9rem;
-    margin-bottom: 0.8rem;
-    font-size: 0.8rem;
-}
-.card-sidebar h4 { color: #58a6ff; margin: 0 0 6px 0; font-size: 0.85rem; }
-
-.meta-footer {
-    font-size: 0.72rem;
-    color: #8b949e;
-    margin-top: 6px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-}
+[data-testid="stChatMessage"] {{ background: transparent !important; padding: 0.2rem 0; gap: 0.6rem; }}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {{ flex-direction: row-reverse; }}
+[data-testid="stChatMessageContent"] {{
+    flex: 0 1 auto; width: fit-content; max-width: 78%; margin: 0 !important;
+    padding: 0.55rem 0.95rem; border-radius: 18px;
+}}
+[data-testid="stChatMessageContent"] [data-testid="stMarkdownContainer"] {{ margin-bottom: 0 !important; }}
+[data-testid="stChatMessageContent"] p:last-child {{ margin-bottom: 0; }}
+[aria-label="Chat message from user"] {{ background: {user_bg}; border-bottom-right-radius: 4px; }}
+[aria-label="Chat message from user"] * {{ color: {user_fg}; }}
+[aria-label="Chat message from assistant"] {{
+    background: {bot_bg}; border: 1px solid {bot_border}; border-bottom-left-radius: 4px;
+}}
+.st-key-history button, .st-key-history button div {{ justify-content: flex-start; }}
+.st-key-history button > div {{ width: 100%; }}
+.st-key-history button p {{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }}
 </style>
-""", unsafe_allow_html=True)
+""")
 
 
-def _badge(status: str) -> str:
-    cls = {
-        "answered": "badge-answered",
-        "waiting_for_user": "badge-waiting",
-        "max_tool_rounds": "badge-maxrounds",
-        "provider_error": "badge-error",
-        "error": "badge-error",
-    }.get(status, "badge-maxrounds")
-    label = {
-        "answered": "Answered",
-        "waiting_for_user": "Waiting for user",
-        "max_tool_rounds": "Max tool rounds",
-        "provider_error": "Provider error",
-        "error": "Error",
-    }.get(status, status)
-    return f'<span class="badge {cls}">{label}</span>'
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def _artifact_paths(version: str) -> tuple[Path, Path]:
+    return VERSIONS_DIR / version / "system_prompt.md", VERSIONS_DIR / version / "tools.yaml"
 
 
-def _render_rounds_and_tools(rounds: list[dict], tool_events: list[dict]) -> None:
-    """Render round-by-round breakdown of tool calls, args, results, and errors."""
-    if not rounds and not tool_events:
+def _md_escape(text: object) -> str:
+    """Show user text literally in st.markdown (no headings, links or emphasis)."""
+    escaped = re.sub(r"([\\`*_{}\[\]()#+\-.!|>~<])", r"\\\1", str(text))
+    return escaped.replace("\n", "  \n")
+
+
+def _reply_text(text: str | None) -> str:
+    """Return `reply` from the prompt's JSON output contract, or the raw text otherwise."""
+    candidate = re.sub(r"^```(?:json)?\s*|\s*```$", "", (text or "").strip())
+    try:
+        data = json.loads(candidate)
+    except (json.JSONDecodeError, TypeError):
+        return text or ""
+    if isinstance(data, dict) and "reply" in data:
+        return str(data["reply"])
+    return text or ""
+
+
+def _read_transcript(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _title_of(transcript: dict) -> str:
+    if transcript.get("title"):
+        return transcript["title"]
+    for turn in transcript.get("turns", []):
+        if turn.get("user"):
+            return turn["user"].strip().splitlines()[0][:60]
+    return "Cuộc trò chuyện trống"
+
+
+def _normalize_model(model: object) -> str:
+    return "" if model in (None, "default") else str(model)
+
+
+def _config_of(transcript: dict) -> tuple:
+    return (
+        transcript.get("version"),
+        transcript.get("provider"),
+        _normalize_model(transcript.get("model")),
+        transcript.get("artifact_version"),
+        transcript.get("history_window"),
+        transcript.get("max_tool_rounds"),
+    )
+
+
+def _chain(transcript: dict) -> list[dict]:
+    """Oldest-first transcripts this conversation continues from, ending with itself."""
+    chain = [transcript]
+    for _ in range(MAX_CHAIN_DEPTH):
+        parent_name = chain[-1].get("continued_from")
+        parent = _read_transcript(TRANSCRIPTS_DIR / parent_name) if parent_name else None
+        if parent is None:
+            break
+        chain.append(parent)
+    return list(reversed(chain))
+
+
+def _history_from(chain: list[dict]) -> list[dict[str, str]]:
+    history: list[dict[str, str]] = []
+    for transcript in chain:
+        for turn in transcript.get("turns", []):
+            if turn.get("status") in RESUMABLE_STATUSES and turn.get("assistant_text"):
+                history.append({"role": "user", "content": turn["user"]})
+                history.append({"role": "assistant", "content": turn["assistant_text"]})
+    return history
+
+
+def _list_conversations() -> list[tuple[Path, dict]]:
+    if not TRANSCRIPTS_DIR.exists():
+        return []
+    items: list[tuple[Path, dict]] = []
+    parents: set[str] = set()
+    for path in TRANSCRIPTS_DIR.glob("*.transcript.json"):
+        data = _read_transcript(path)
+        if not data or not data.get("turns"):
+            continue
+        if data.get("continued_from"):
+            parents.add(data["continued_from"])
+        items.append((path, data))
+    items = [item for item in items if item[0].name not in parents]
+    items.sort(key=lambda item: item[1].get("updated_at", ""), reverse=True)
+    return items
+
+
+# ── Session state & callbacks ─────────────────────────────────────────────────
+def _init_state() -> None:
+    defaults: dict[str, Any] = {
+        "provider_sel": PROVIDERS[0],
+        "version_sel": VERSIONS[-1],
+        "history_window": 5,
+        "max_tool_rounds": 4,
+        "show_details": False,
+        "history_limit": HISTORY_PAGE_SIZE,
+    }
+    for provider in PROVIDERS:
+        defaults[f"model_input_{provider}"] = DEFAULT_MODELS.get(provider, "")
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
+
+
+def _new_conversation() -> None:
+    st.session_state.pop("transcript_path", None)
+
+
+def _show_more_history() -> None:
+    st.session_state.history_limit += HISTORY_PAGE_SIZE
+
+
+def _pick_example() -> None:
+    label = st.session_state.get("example_pick")
+    if label:
+        st.session_state.pending_prompt = EXAMPLES[label]
+        st.session_state.example_pick = None
+
+
+def _open_conversation(path: Path) -> None:
+    data = _read_transcript(path)
+    if data is None:
         return
-
-    num_calls = len(tool_events)
-    num_rounds = len(rounds) if rounds else 1
-    title = f"🔍 Tool Audit Trace — {num_calls} call{'s' if num_calls != 1 else ''} across {num_rounds} round{'s' if num_rounds != 1 else ''}"
-
-    with st.expander(title, expanded=True):
-        if rounds:
-            for r_idx, r in enumerate(rounds, 1):
-                r_num = r.get("round", r_idx)
-                calls = r.get("tool_calls", [])
-                results = r.get("tool_results", [])
-                st.markdown(f"##### 🔄 Round {r_num} ({len(calls)} tool call{'s' if len(calls) != 1 else ''})")
-                if not calls:
-                    st.caption("No tool calls made in this round (final answer generation).")
-                    continue
-
-                for i, call in enumerate(calls):
-                    t_name = call.get("name", "?")
-                    t_args = call.get("args", {})
-                    # Match with result if available
-                    res_obj = results[i].get("result") if i < len(results) else {}
-                    is_err = isinstance(res_obj, dict) and ("error" in res_obj)
-
-                    args_json = json.dumps(t_args, ensure_ascii=False, indent=2)
-                    res_json = json.dumps(res_obj, ensure_ascii=False, indent=2, default=str)
-
-                    st.markdown(f"""
-                    <div class="tool-audit-box">
-                      <div class="tool-title-bar">
-                        <span class="tool-name">⚡ {t_name}</span>
-                        <span>{f'<span class="badge badge-error">ERROR</span>' if is_err else '<span class="badge badge-answered">SUCCESS</span>'}</span>
-                      </div>
-                      <div style="color:#8b949e; margin-bottom:2px;"><b>Arguments:</b></div>
-                      <div class="tool-args">{json.dumps(t_args, ensure_ascii=False)}</div>
-                      <div style="color:#8b949e; margin-top:6px; margin-bottom:2px;"><b>Result / Error:</b></div>
-                      <div class="{ 'tool-res-err' if is_err else 'tool-res-ok' }">
-                        { '❌ Error details: ' if is_err else '✅ Result data: ' }
-                        <pre style="margin:4px 0 0 0; white-space:pre-wrap; word-break:break-all; font-size:0.75rem;">{res_json[:1500]}</pre>
-                      </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-        else:
-            # Fallback for flat tool_events list
-            for ev in tool_events:
-                t_name = ev.get("tool", "?")
-                t_args = ev.get("args", {})
-                res_obj = ev.get("result", {})
-                is_err = isinstance(res_obj, dict) and ("error" in res_obj)
-                res_json = json.dumps(res_obj, ensure_ascii=False, indent=2, default=str)
-
-                st.markdown(f"""
-                <div class="tool-audit-box">
-                  <div class="tool-title-bar">
-                    <span class="tool-name">⚡ {t_name}</span>
-                    <span>{f'<span class="badge badge-error">ERROR</span>' if is_err else '<span class="badge badge-answered">SUCCESS</span>'}</span>
-                  </div>
-                  <div style="color:#8b949e;"><b>Arguments:</b></div>
-                  <div class="tool-args">{json.dumps(t_args, ensure_ascii=False)}</div>
-                  <div style="color:#8b949e; margin-top:6px;"><b>Result:</b></div>
-                  <div class="{ 'tool-res-err' if is_err else 'tool-res-ok' }">
-                    <pre style="margin:4px 0 0 0; white-space:pre-wrap; font-size:0.75rem;">{res_json[:1200]}</pre>
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
+    st.session_state.transcript_path = str(path)
+    # Restore the conversation's own parameters so continuing it keeps the same transcript.
+    if data.get("provider") in PROVIDERS:
+        st.session_state.provider_sel = data["provider"]
+        st.session_state[f"model_input_{data['provider']}"] = _normalize_model(data.get("model"))
+    if data.get("version") in VERSIONS:
+        st.session_state.version_sel = data["version"]
+    for key in ("history_window", "max_tool_rounds"):
+        if isinstance(data.get(key), int):
+            st.session_state[key] = data[key]
 
 
-def _init_transcript(version_label: str, provider_name: str, model_id: str | None, history_w: int, max_r: int):
+def _create_transcript(config: dict, title: str, continued_from: str | None) -> tuple[dict, Path]:
+    artifact = config["artifact"]
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S%f")
-    transcript_id = "_".join([safe_slug(version_label), safe_slug(provider_name), timestamp])
-    tpath = TRANSCRIPTS_DIR / f"{transcript_id}.transcript.json"
-    av = build_artifact_version(version_label, SYSTEM_PROMPT_PATH, TOOLS_PATH)
+    transcript_id = "_".join([safe_slug(artifact.version), safe_slug(config["provider"]), timestamp])
     transcript = {
         "transcript_id": transcript_id,
-        **artifact_version_dict(av),
-        "provider": provider_name,
-        "model": model_id or "default",
-        "system_prompt": str(SYSTEM_PROMPT_PATH),
-        "tools": str(TOOLS_PATH),
-        "history_window": history_w,
-        "max_tool_rounds": max_r,
+        **artifact_version_dict(artifact),
+        "provider": config["provider"],
+        "model": config["model"] or None,
+        "system_prompt": str(config["prompt_path"]),
+        "tools": str(config["tools_path"]),
+        "history_window": config["history_window"],
+        "max_tool_rounds": config["max_tool_rounds"],
         "created_at": now_iso(),
         "updated_at": now_iso(),
+        "title": title,
+        "continued_from": continued_from,
         "turns": [],
     }
-    return transcript, tpath
+    return transcript, TRANSCRIPTS_DIR / f"{transcript_id}.transcript.json"
 
 
-# ── Sidebar: Configuration & Audit Metadata ──────────────────────────────────
+# ── Rendering ─────────────────────────────────────────────────────────────────
+def _render_details(turn: dict, transcript: dict) -> None:
+    rounds = turn.get("rounds") or []
+    n_calls = sum(len(r.get("tool_calls") or []) for r in rounds)
+    with st.expander(f"{n_calls} tool call · {turn.get('status', '')}", icon=":material/build:", type="compact"):
+        for r in rounds:
+            results = r.get("tool_results") or []
+            for index, call in enumerate(r.get("tool_calls") or []):
+                result = results[index].get("result") if index < len(results) else None
+                is_error = isinstance(result, dict) and "error" in result
+                with st.expander(f"Round {r.get('round')} · {call.get('name')}", type="step"):
+                    st.json(call.get("args") or {})
+                    if result is not None:
+                        st.json(result, expanded=is_error)
+        st.caption(f"{transcript.get('artifact_version')} · {transcript.get('transcript_id')}.transcript.json")
+
+
+def _render_turn(turn: dict, transcript: dict, show_details: bool) -> None:
+    with st.chat_message("user"):
+        st.markdown(_md_escape(turn.get("user", "")))
+    with st.chat_message("assistant"):
+        if turn.get("status") == "provider_error":
+            st.error("Không kết nối được model, vui lòng thử lại.", icon=":material/error:")
+        else:
+            st.markdown(_reply_text(turn.get("assistant_text")))
+        if show_details:
+            _render_details(turn, transcript)
+
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+_init_state()
+
+active_path = Path(st.session_state["transcript_path"]) if st.session_state.get("transcript_path") else None
+active = _read_transcript(active_path) if active_path else None
+
 with st.sidebar:
-    st.markdown("## ⚙️ Configuration")
-
-    provider_name = st.selectbox("LLM Provider", PROVIDERS, index=0, key="provider_sel")
-    model_input = st.text_input("Model ID (optional)", placeholder="e.g. google/gemini-2.5-flash", key="model_input")
-    version_label = st.selectbox("Artifact Version", VERSIONS, index=0, key="version_sel")
-
-    # Compute & display Artifact Version and Hashes
-    try:
-        av = build_artifact_version(version_label, SYSTEM_PROMPT_PATH, TOOLS_PATH)
-        st.markdown(f"""
-        <div class="card-sidebar">
-          <h4>🏷️ Artifact Version & Hashes</h4>
-          <div><b>Version:</b> <code style="color:#58a6ff;">{av.artifact_version}</code></div>
-          <div style="margin-top:4px;"><b>Prompt Hash (sha256):</b></div>
-          <code style="font-size:0.7rem; color:#7ee787; word-break:break-all;">{av.prompt_hash}</code>
-          <div style="margin-top:4px;"><b>Tools Hash (sha256):</b></div>
-          <code style="font-size:0.7rem; color:#f0883e; word-break:break-all;">{av.tools_hash}</code>
-        </div>
-        """, unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Cannot compute artifact version: {e}")
-        av = None
-
-    st.markdown("---")
-    c1, c2 = st.columns(2)
-    with c1:
-        history_window = st.number_input("History Window", min_value=1, max_value=20, value=5, step=1)
-    with c2:
-        max_tool_rounds = st.number_input("Max Tool Rounds", min_value=1, max_value=10, value=4, step=1)
-
-    st.markdown("---")
-    # Loop Verification Badge (Deliverable check)
-    st.markdown("""
-    <div class="card-sidebar" style="border-color:#1f6feb;">
-      <h4 style="color:#79c0ff;">🛡️ Pre-Submission Audit</h4>
-      <div style="font-size:0.76rem; line-height:1.5;">
-        ✅ <b>Shared Loop:</b> <code style="color:#58a6ff;">chat.py::run_model_tool_loop</code><br>
-        ✅ <b>Audit Fields:</b> Tool, Args, Result/Error, Rounds, Hashes<br>
-        ✅ <b>Security:</b> Secrets via <code style="color:#e3b341;">.env</code> only
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Active Transcript Path
-    st.markdown("#### 📄 Active Transcript")
-    if "transcript_path" in st.session_state:
-        st.code(st.session_state.transcript_path, language="text")
-        if "transcript" in st.session_state and st.session_state.transcript.get("turns"):
-            with st.expander(f"View Transcript JSON ({len(st.session_state.transcript['turns'])} turns)", expanded=False):
-                st.json(st.session_state.transcript)
-    else:
-        st.caption(f"Will save to: `starter_v0/transcripts/{version_label}_{provider_name}_<timestamp>.transcript.json`")
-
-    st.markdown("---")
-    if st.button("🗑️ Clear Chat / New Session", use_container_width=True, type="secondary"):
-        for k in ["messages", "history", "transcript", "transcript_path", "turn_index"]:
-            st.session_state.pop(k, None)
-        st.rerun()
-
-
-# ── App Header ───────────────────────────────────────────────────────────────
-av_str = av.artifact_version if av else version_label
-st.markdown(f"""
-<div class="app-header">
-  <div class="header-left">
-    <div style="font-size:2.2rem; line-height:1;">🖥️</div>
-    <div>
-      <h1 class="header-title">IT Helpdesk Agent</h1>
-      <p class="header-sub">Streamlit Live Chat · Tool Execution Audit · Multi-Turn Transcript Logging</p>
-    </div>
-  </div>
-  <div style="text-align:right;">
-    <div class="loop-badge">🔄 Loop: run_model_tool_loop (chat.py)</div>
-    <div style="font-size:0.75rem; color:#8b949e; margin-top:4px;">
-      Artifact: <code style="color:#58a6ff;">{av_str}</code>
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-
-# ── Session State Initialization ─────────────────────────────────────────────
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "history" not in st.session_state:
-    st.session_state.history = []
-if "turn_index" not in st.session_state:
-    st.session_state.turn_index = 0
-
-
-# ── Render Conversation History ──────────────────────────────────────────────
-if not st.session_state.messages:
-    st.info("""
-    👋 **Chào mừng đến với IT Helpdesk Agent!**
-    
-    Hãy nhập câu hỏi vào ô chat bên dưới, hoặc thử một trong các kịch bản demo:
-    - `Kiểm tra trạng thái VPN production giúp mình.` *(Gọi `check_service_status`)*
-    - `Inspect thiết bị LT-204 và cho mình biết diagnostic.` *(Gọi `inspect_device`)*
-    - `Mình muốn tạo ticket lỗi Wi-Fi trên máy LT-240 mức medium.` *(Gọi `clarify` để xác nhận)*
-    - `Tìm hướng dẫn khắc phục VPN không kết nối được.` *(Gọi `search_kb`)*
-    - `Tra cứu nhân viên EMP-1003 và liệt kê thiết bị được cấp.` *(Gọi `lookup_user`)*
-    """)
-
-for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        st.markdown(f"""
-        <div class="chat-row">
-          <div class="chat-meta meta-user">
-            <span>👤 User Request</span>
-            <span style="color:#8b949e; font-weight:normal;">(Turn #{msg.get("turn_index", 1)})</span>
-          </div>
-          <div class="chat-user">{msg["content"]}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        status = msg.get("status", "answered")
-        rounds = msg.get("rounds", [])
-        num_rounds = len(rounds) if rounds else 1
-        st.markdown(f"""
-        <div class="chat-row">
-          <div class="chat-meta meta-agent">
-            <span>🤖 Final Response</span>
-            &nbsp; {_badge(status)}
-            <span class="badge badge-round">Round: {num_rounds}/{max_tool_rounds}</span>
-          </div>
-          <div class="chat-agent">{msg["content"]}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Render Tool Audit Breakdown
-        _render_rounds_and_tools(rounds, msg.get("tool_events", []))
-
-        # Turn metadata footer
-        if msg.get("transcript_path"):
-            st.markdown(f"""
-            <div class="meta-footer">
-              <span>🏷️ <b>Version:</b> <code>{msg.get('artifact_version', av_str)}</code></span>
-              <span>📄 <b>Transcript:</b> <code>{Path(msg['transcript_path']).name}</code></span>
-            </div>
-            """, unsafe_allow_html=True)
-
-
-# ── Chat Input & Agent Loop Execution ────────────────────────────────────────
-user_input = st.chat_input("Nhập yêu cầu IT helpdesk của bạn... (Ví dụ: Kiểm tra trạng thái VPN production)")
-
-if user_input:
-    st.session_state.turn_index += 1
-    current_turn = st.session_state.turn_index
-
-    # Add user message to UI state
-    st.session_state.messages.append({
-        "role": "user",
-        "content": user_input,
-        "turn_index": current_turn,
-    })
-
-    with st.spinner(f"Agent đang xử lý (Turn #{current_turn} via run_model_tool_loop)..."):
-        try:
-            # 1. Initialize provider & tools
-            provider = make_provider(provider_name)
-            model = model_input.strip() or None
-            system_prompt = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
-            tool_declarations = load_tool_declarations(TOOLS_PATH)
-            openai_tools = to_openai_tools(tool_declarations)
-
-            # 2. Build messages with history window
-            messages = [
-                {"role": "system", "content": system_prompt},
-                *trim_history(st.session_state.history, int(history_window)),
-                {"role": "user", "content": user_input},
-            ]
-
-            # 3. REUSE THE EXACT SAME RUN_MODEL_TOOL_LOOP (Requirement: UI uses shared loop)
-            result = run_model_tool_loop(
-                provider=provider,
-                messages=messages,
-                tools=openai_tools,
-                model=model,
-                max_tool_rounds=int(max_tool_rounds),
+    st.button("Cuộc trò chuyện mới", icon=":material/edit_square:", on_click=_new_conversation, width="stretch")
+    st.caption("Lịch sử")
+    conversations = _list_conversations()
+    with st.container(key="history", gap="xxsmall"):
+        for path, data in conversations[: st.session_state.history_limit]:
+            st.button(
+                _title_of(data),
+                key=f"conv_{path.name}",
+                on_click=_open_conversation,
+                args=(path,),
+                type="secondary" if active_path and path.name == active_path.name else "tertiary",
+                width="stretch",
             )
+    if len(conversations) > st.session_state.history_limit:
+        st.button("Xem thêm", icon=":material/expand_more:", key="show_more_history", on_click=_show_more_history, type="tertiary")
 
-            assistant_text = result["assistant_text"]
-            status = result["status"]
-            tool_events = result.get("tool_events", [])
-            rounds = result.get("rounds", [])
+    st.divider()
+    st.caption("Thông số kỹ thuật")
+    provider_name = st.selectbox("Provider", PROVIDERS, key="provider_sel")
+    model_input = st.text_input(
+        "Model", key=f"model_input_{provider_name}", placeholder="Để trống = model mặc định của provider"
+    )
+    version_label = st.selectbox(
+        "Artifact version",
+        VERSIONS,
+        key="version_sel",
+        help="Chạy đúng system_prompt.md và tools.yaml của version này (artifacts/versions/).",
+    )
+    history_window = st.slider("History window", min_value=1, max_value=20, key="history_window")
+    max_tool_rounds = st.slider("Max tool rounds", min_value=1, max_value=10, key="max_tool_rounds")
+    show_details = st.toggle("Chi tiết kỹ thuật", key="show_details")
 
-            # 4. Initialize transcript on first turn if needed
-            if "transcript" not in st.session_state:
-                transcript, tpath = _init_transcript(
-                    version_label, provider_name, model, int(history_window), int(max_tool_rounds)
-                )
-                st.session_state.transcript = transcript
-                st.session_state.transcript_path = str(tpath)
+    prompt_path, tools_path = _artifact_paths(version_label)
+    artifact = build_artifact_version(version_label, prompt_path, tools_path)
+    if show_details:
+        st.caption(f"`{artifact.artifact_version}`")
+        if active_path:
+            st.caption(f"`{active_path.name}`")
 
-            # 5. Append turn to transcript and save
-            turn_record = {
-                "turn_index": current_turn,
-                "started_at": now_iso(),
-                "user": user_input,
-                "status": status,
-                "assistant_text": assistant_text,
-                "rounds": rounds,
-                "tool_events": tool_events,
-                "ended_at": now_iso(),
-            }
-            st.session_state.transcript["turns"].append(turn_record)
-            write_transcript(Path(st.session_state.transcript_path), st.session_state.transcript)
+config = {
+    "version": version_label,
+    "provider": provider_name,
+    "model": model_input.strip(),
+    "artifact": artifact,
+    "prompt_path": prompt_path,
+    "tools_path": tools_path,
+    "history_window": int(history_window),
+    "max_tool_rounds": int(max_tool_rounds),
+}
+config_key = (
+    config["version"], config["provider"], config["model"],
+    artifact.artifact_version, config["history_window"], config["max_tool_rounds"],
+)
+# Browser tab: AI name + the model and artifact version actually answering.
+st.set_page_config(page_title=f"{ASSISTANT_NAME} · {config['model'] or config['provider']} · {version_label}")
 
-            # 6. Update conversational history & UI messages
-            st.session_state.history.append({"role": "user", "content": user_input})
-            st.session_state.history.append({"role": "assistant", "content": assistant_text})
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": assistant_text,
-                "status": status,
-                "rounds": rounds,
-                "tool_events": tool_events,
-                "artifact_version": av.artifact_version if av else version_label,
-                "transcript_path": st.session_state.transcript_path,
-            })
 
-        except Exception as exc:
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": f"⚠️ **Provider Error:** `{type(exc).__name__}: {exc}`",
-                "status": "provider_error",
-                "rounds": [],
-                "tool_events": [],
-                "artifact_version": av.artifact_version if av else version_label,
-                "transcript_path": st.session_state.get("transcript_path", ""),
-            })
+# ── Chat ──────────────────────────────────────────────────────────────────────
+chain = _chain(active) if active else []
+if not chain:
+    st.title("Tôi có thể giúp gì cho bạn?")
+    st.caption(f"{ASSISTANT_NAME} · trợ lý IT service desk của Northstar Labs · dữ liệu giả lập")
+    st.pills("Ví dụ", list(EXAMPLES), key="example_pick", on_change=_pick_example, label_visibility="collapsed")
+for transcript in chain:
+    for turn in transcript.get("turns", []):
+        _render_turn(turn, transcript, show_details)
 
+prompt = st.chat_input("Nhập tin nhắn…", submit_mode="disable") or st.session_state.pop("pending_prompt", None)
+if prompt:
+    if active is None or _config_of(active) != config_key:
+        continued_from = active_path.name if active and active.get("turns") else None
+        title = _title_of(active) if continued_from else prompt.strip().splitlines()[0][:60]
+        transcript, transcript_path = _create_transcript(config, title, continued_from)
+        chain = [*chain, transcript]
+    else:
+        transcript, transcript_path = active, active_path
+
+    turn: dict[str, Any] = {
+        "turn_index": len(transcript["turns"]) + 1,
+        "started_at": now_iso(),
+        "user": prompt,
+        "status": "started",
+        "assistant_text": None,
+        "rounds": [],
+        "tool_events": [],
+    }
+    with st.chat_message("user"):
+        st.markdown(_md_escape(prompt))
+    with st.chat_message("assistant"):
+        with st.spinner("Đang trả lời…"):
+            try:
+                messages = [
+                    {"role": "system", "content": config["prompt_path"].read_text(encoding="utf-8")},
+                    *trim_history(_history_from(chain), config["history_window"]),
+                    {"role": "user", "content": prompt},
+                ]
+                # Same agent loop as chat.py (lab requirement: UI must not implement its own loop).
+                turn.update(run_model_tool_loop(
+                    provider=make_provider(config["provider"]),
+                    messages=messages,
+                    tools=to_openai_tools(load_tool_declarations(config["tools_path"])),
+                    model=config["model"] or None,
+                    max_tool_rounds=config["max_tool_rounds"],
+                ))
+            except Exception as exc:
+                turn.update({"status": "provider_error", "error": f"{type(exc).__name__}: {exc}"})
+
+    # Same transcript format as chat.py, including provider_error turns.
+    turn["ended_at"] = now_iso()
+    transcript["turns"].append(turn)
+    write_transcript(transcript_path, transcript)
+    st.session_state.transcript_path = str(transcript_path)
     st.rerun()
-
