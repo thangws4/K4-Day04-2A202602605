@@ -3,5 +3,93 @@
   "dataset_role": "group",
   "description": "Template intentionally left empty. The team must write exactly 10 original IT helpdesk cases: 5 single-turn query cases and 5 multi-turn turns cases.",
   "allowed_failure_types": ["wrong_tool", "wrong_arg_value", "wrong_boundary", "unnecessary_tool", "out_of_scope", "missing_info"],
-  "cases": []
+  "cases": [
+    {
+      "id": "G01_kb_wifi", "phase": "B", "suite": "group",
+      "query": "Làm sao để đổi mật khẩu Wi-Fi của công ty?",
+      "failure_type": "wrong_tool",
+      "expect": {"tool_calls": [{"name": "search_kb", "args": {"category": "wifi"}}]},
+      "metadata": {"skill": "route_kb_wifi", "difficulty": "easy", "what_it_tests": "Tìm hướng dẫn về wifi trong KB."}
+    },
+    {
+      "id": "G02_policy_data", "phase": "B", "suite": "group",
+      "query": "Chính sách bảo vệ dữ liệu khách hàng quy định như thế nào?",
+      "failure_type": "wrong_tool",
+      "expect": {"tool_calls": [{"name": "policy", "args": {"policy_area": "data_privacy"}}]},
+      "metadata": {"skill": "route_policy_data", "difficulty": "medium", "what_it_tests": "Lấy thông tin từ policy về data privacy thay vì KB."}
+    },
+    {
+      "id": "G03_service_sso", "phase": "B", "suite": "group",
+      "query": "Hệ thống SSO trên môi trường staging có đang gặp sự cố không?",
+      "failure_type": "wrong_arg_value",
+      "expect": {"tool_calls": [{"name": "check_service_status", "args": {"service": "sso", "environment": "staging"}}]},
+      "metadata": {"skill": "route_status_sso", "difficulty": "easy", "what_it_tests": "Kiểm tra SSO với đúng environment staging."}
+    },
+    {
+      "id": "G04_user_lookup", "phase": "B", "suite": "group",
+      "query": "Tra cứu thông tin liên lạc và thiết bị của nhân viên EMP-2005.",
+      "failure_type": "wrong_tool",
+      "expect": {"tool_calls": [{"name": "lookup_user", "args": {"employee_id": "EMP-2005"}}]},
+      "metadata": {"skill": "route_user_lookup", "difficulty": "easy", "what_it_tests": "Gọi tool tra cứu user khi có ID."}
+    },
+    {
+      "id": "G05_search_device_specs", "phase": "B", "suite": "group",
+      "query": "Tìm thông tin cấu hình chi tiết cho dòng laptop HP EliteBook 840 G8.",
+      "failure_type": "wrong_tool",
+      "expect": {"tool_calls": [{"name": "search_device_info", "args": {"manufacturer": "HP", "model": "EliteBook 840 G8", "query_type": "specs"}}]},
+      "metadata": {"skill": "route_search_specs", "difficulty": "medium", "what_it_tests": "Gọi external tool tìm cấu hình thiết bị với query_type specs."}
+    },
+    {
+      "id": "G06_create_ticket_confirm", "phase": "B", "suite": "group",
+      "turns": [
+        {"role": "user", "content": "Tạo một ticket lỗi phần cứng cho máy LT-305."},
+        {"role": "user", "content": "Ok tôi xác nhận thông tin trên, hãy tạo đi."}
+      ],
+      "failure_type": "wrong_boundary",
+      "expect": {"tool_calls": [{"name": "create_ticket", "args": {"summary": "Lỗi phần cứng", "priority": "medium", "asset_id": "LT-305", "confirmed": true}}]},
+      "metadata": {"skill": "multiturn_ticket_confirm", "difficulty": "hard", "what_it_tests": "Tạo ticket với confirmed=true sau khi user đồng ý."}
+    },
+    {
+      "id": "G07_clarify_asset_then_inspect", "phase": "B", "suite": "group",
+      "turns": [
+        {"role": "user", "content": "Kiểm tra phần cứng máy tính giúp tôi."},
+        {"role": "user", "content": "Mã máy của tôi là LT-412."},
+        {"role": "user", "content": "Đúng rồi, chỉ kiểm tra phần cứng thôi."}
+      ],
+      "failure_type": "missing_info",
+      "expect": {"tool_calls": [{"name": "inspect_device", "args": {"asset_id": "LT-412", "check": "hardware"}}]},
+      "metadata": {"skill": "multiturn_clarify_asset", "difficulty": "hard", "what_it_tests": "Đợi user cung cấp đủ asset_id và check type."}
+    },
+    {
+      "id": "G08_clarify_service_env", "phase": "B", "suite": "group",
+      "turns": [
+        {"role": "user", "content": "Hệ thống máy in đang bị lỗi à?"},
+        {"role": "user", "content": "Ý tôi là ở môi trường staging."}
+      ],
+      "failure_type": "wrong_arg_value",
+      "expect": {"tool_calls": [{"name": "check_service_status", "args": {"service": "printing", "environment": "staging"}}]},
+      "metadata": {"skill": "multiturn_clarify_env", "difficulty": "medium", "what_it_tests": "Cập nhật environment từ lượt hội thoại sau."}
+    },
+    {
+      "id": "G09_correct_user", "phase": "B", "suite": "group",
+      "turns": [
+        {"role": "user", "content": "Tra cứu nhân viên EMP-501 cho tôi."},
+        {"role": "user", "content": "Xin lỗi, tôi nhầm mã, mã đúng là EMP-502."}
+      ],
+      "failure_type": "wrong_arg_value",
+      "expect": {"tool_calls": [{"name": "lookup_user", "args": {"employee_id": "EMP-502"}}]},
+      "metadata": {"skill": "multiturn_correct_user", "difficulty": "medium", "what_it_tests": "User đính chính thông tin ID, cần lấy ID mới nhất."}
+    },
+    {
+      "id": "G10_ticket_missing_info", "phase": "B", "suite": "group",
+      "turns": [
+        {"role": "user", "content": "Tạo cho tôi một ticket với độ ưu tiên high nhé."},
+        {"role": "user", "content": "Lỗi là mạng chậm."},
+        {"role": "user", "content": "Xác nhận tạo."}
+      ],
+      "failure_type": "missing_info",
+      "expect": {"tool_calls": [{"name": "create_ticket", "args": {"summary": "Mạng chậm", "priority": "high", "confirmed": true}}]},
+      "metadata": {"skill": "multiturn_ticket_missing_summary", "difficulty": "hard", "what_it_tests": "User cung cấp summary ở lượt 2, priority ở lượt 1, xác nhận lượt 3."}
+    }
+  ]
 }
