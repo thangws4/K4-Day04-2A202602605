@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IT Helpdesk Agent — Day 04 Lab</title>
+  <meta name="description" content="IT Helpdesk Agent Demo UI — Day 04 Lab: Prompt Engineering & Tool Calling." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0d1117;--bg2:#161b22;--bg3:#1f2937;
+      --border:#30363d;--border2:#21262d;
+      --text:#c9d1d9;--text-dim:#8b949e;--text-bright:#f0f6fc;
+      --green:#7ee787;--green-bg:#196127;--green-border:#238636;
+      --blue:#58a6ff;--blue-bg:#0a2a5e;
+      --orange:#f0883e;--orange-bg:#3d1f00;
+      --amber:#e3b341;--amber-bg:#3d2b00;
+      --red:#f85149;--red-bg:#3d0f0f;
+      --sidebar-w:280px;
+      --radius:12px;
+    }
+    html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);overflow:hidden}
+    /* ── Layout ── */
+    .layout{display:flex;height:100vh}
+    /* ── Sidebar ── */
+    .sidebar{
+      width:var(--sidebar-w);min-width:var(--sidebar-w);
+      background:linear-gradient(160deg,#0f1117 0%,#1a1d2e 60%,#12151f 100%);
+      border-right:1px solid var(--border2);
+      display:flex;flex-direction:column;padding:1.2rem 1rem;gap:.75rem;
+      overflow-y:auto;
+    }
+    .sidebar-title{color:var(--green);font-size:.85rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding-bottom:.5rem;border-bottom:1px solid var(--border2)}
+    .field-label{font-size:.72rem;color:var(--text-dim);font-weight:600;letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px}
+    select,input[type=text],input[type=number]{
+      width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+      color:var(--text);font-family:'Inter',sans-serif;font-size:.82rem;
+      padding:.4rem .65rem;outline:none;transition:border .15s;
+    }
+    select:focus,input:focus{border-color:var(--blue)}
+    .hash-box{
+      background:var(--bg2);border:1px solid var(--border2);border-radius:6px;
+      padding:.5rem .75rem;font-family:'JetBrains Mono',monospace;font-size:.72rem;
+      color:var(--text-dim);line-height:1.6;
+    }
+    .hash-box span{color:var(--blue);font-weight:600}
+    hr.sep{border:none;border-top:1px solid var(--border2);margin:.25rem 0}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+    .btn-clear{
+      background:var(--bg2);border:1px solid var(--border);border-radius:6px;
+      color:var(--text-dim);font-family:'Inter',sans-serif;font-size:.8rem;
+      padding:.45rem;cursor:pointer;transition:all .15s;width:100%;
+    }
+    .btn-clear:hover{background:var(--bg3);color:var(--text);border-color:var(--blue)}
+    .transcript-info{font-size:.7rem;color:var(--text-dim);word-break:break-all}
+    .transcript-info span{color:var(--orange)}
+    /* ── Main ── */
+    .main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+    /* ── Header ── */
+    .header{
+      background:linear-gradient(135deg,var(--bg2) 0%,var(--bg3) 50%,var(--bg2) 100%);
+      border-bottom:1px solid var(--border);padding:1rem 1.5rem;
+      display:flex;align-items:center;gap:12px;flex-shrink:0;
+    }
+    .header-icon{font-size:1.8rem;line-height:1}
+    .header h1{color:var(--text-bright);font-size:1.25rem;font-weight:700;margin:0}
+    .header p{color:var(--text-dim);font-size:.8rem;margin:0}
+    /* ── Chat area ── */
+    .chat-area{flex:1;overflow-y:auto;padding:1.2rem 1.5rem;display:flex;flex-direction:column;gap:.75rem;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+    /* ── Bubbles ── */
+    .bubble-wrap{display:flex;flex-direction:column;gap:3px}
+    .bubble-label{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.7}
+    .label-user{color:var(--green)}
+    .label-agent{color:var(--blue)}
+    .bubble-user{
+      background:linear-gradient(135deg,#1c4a2e,#196127);
+      border:1px solid var(--green-border);border-radius:12px 12px 2px 12px;
+      padding:.7rem 1rem;margin-left:20%;color:var(--text-bright);
+      font-size:.9rem;line-height:1.55;box-shadow:0 2px 8px rgba(35,134,54,.15);
+      white-space:pre-wrap;word-break:break-word;
+    }
+    .bubble-agent{
+      background:linear-gradient(135deg,var(--bg2),var(--bg3));
+      border:1px solid var(--border);border-radius:12px 12px 12px 2px;
+      padding:.7rem 1rem;margin-right:20%;color:var(--text);
+      font-size:.9rem;line-height:1.55;white-space:pre-wrap;word-break:break-word;
+    }
+    /* ── Status badge ── */
+    .badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:.65rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;margin-left:6px;vertical-align:middle}
+    .badge-answered{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border)}
+    .badge-waiting{background:var(--amber-bg);color:var(--amber);border:1px solid #9e6a03}
+    .badge-error{background:var(--red-bg);color:var(--red);border:1px solid #6e1010}
+    /* ── Tool trace ── */
+    .tool-trace-header{
+      margin-top:.4rem;margin-right:20%;
+      background:var(--bg);border:1px solid var(--border2);border-left:3px solid var(--orange);
+      border-radius:6px;padding:.4rem .75rem;
+      font-size:.75rem;color:var(--orange);font-weight:600;cursor:pointer;
+      user-select:none;display:flex;align-items:center;justify-content:space-between;
+      transition:background .15s;
+    }
+    .tool-trace-header:hover{background:var(--bg2)}
+    .tool-trace-body{
+      margin-right:20%;background:var(--bg);border:1px solid var(--border2);border-left:3px solid var(--orange);
+      border-top:none;border-radius:0 0 6px 6px;padding:.6rem .75rem;
+      display:none;flex-direction:column;gap:.4rem;
+    }
+    .tool-trace-body.open{display:flex}
+    .tool-card{
+      background:#0a0d13;border:1px solid var(--border2);border-radius:4px;
+      padding:.4rem .6rem;font-family:'JetBrains Mono',monospace;font-size:.75rem;
+      color:var(--text);line-height:1.6;
+    }
+    .tool-card .tn{color:var(--orange);font-weight:600}
+    .tool-card .tok{color:var(--green)}
+    .tool-card .terr{color:var(--red)}
+    /* ── Input bar ── */
+    .input-bar{
+      border-top:1px solid var(--border);padding:.85rem 1.2rem;
+      background:var(--bg2);display:flex;gap:.6rem;flex-shrink:0;
+    }
+    .chat-input{
+      flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;
+      color:var(--text);font-family:'Inter',sans-serif;font-size:.9rem;
+      padding:.55rem .9rem;outline:none;resize:none;transition:border .15s;
+      line-height:1.4;min-height:40px;max-height:120px;overflow-y:auto;
+    }
+    .chat-input:focus{border-color:var(--blue)}
+    .chat-input::placeholder{color:var(--text-dim)}
+    .btn-send{
+      background:linear-gradient(135deg,#238636,#196127);
+      border:1px solid var(--green-border);border-radius:8px;
+      color:var(--text-bright);font-size:1.1rem;width:44px;height:44px;
+      cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;
+      flex-shrink:0;align-self:flex-end;
+    }
+    .btn-send:hover{background:linear-gradient(135deg,#2ea043,#238636);transform:scale(1.05)}
+    .btn-send:active{transform:scale(.97)}
+    /* ── Welcome card ── */
+    .welcome{
+      background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+      padding:2rem;margin:auto;max-width:480px;text-align:center;
+    }
+    .welcome h2{color:var(--text-bright);font-size:1.1rem;margin-bottom:.6rem}
+    .welcome p{color:var(--text-dim);font-size:.85rem;line-height:1.6;margin-bottom:1rem}
+    .scenario-list{list-style:none;text-align:left;display:flex;flex-direction:column;gap:.4rem}
+    .scenario-list li{
+      background:var(--bg);border:1px solid var(--border2);border-radius:6px;
+      padding:.45rem .75rem;font-size:.8rem;color:var(--text);cursor:pointer;
+      transition:all .15s;
+    }
+    .scenario-list li:hover{border-color:var(--green);color:var(--text-bright)}
+    .scenario-list li::before{content:"▶  ";color:var(--green);font-size:.7rem}
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar{width:5px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+    /* ── Spinner ── */
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .spinner{
+      width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--blue);
+      border-radius:50%;animation:spin .7s linear infinite;margin:0 auto;
+    }
+    .thinking{
+      background:var(--bg2);border:1px solid var(--border);border-radius:12px 12px 12px 2px;
+      padding:.6rem 1rem;margin-right:20%;display:flex;align-items:center;gap:.75rem;
+      font-size:.8rem;color:var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-title">⚙ Configuration</div>
+
+    <div>
+      <div class="field-label">Provider</div>
+      <select id="provider">
+        <option value="openrouter">OpenRouter</option>
+        <option value="openai">OpenAI</option>
+        <option value="anthropic">Anthropic</option>
+        <option value="gemini">Gemini</option>
+      </select>
+    </div>
+
+    <div>
+      <div class="field-label">Model ID (optional)</div>
+      <input type="text" id="model-id" placeholder="e.g. google/gemini-2.5-flash" />
+    </div>
+
+    <div>
+      <div class="field-label">Artifact Version</div>
+      <select id="version">
+        <option>v0</option><option>v1</option><option>v2</option><option>v3</option>
+      </select>
+    </div>
+
+    <div class="hash-box" id="artifact-hash">
+      artifact_version: <span id="av-label">v0+p233ec2cecfdf+teb3e2243f237</span><br>
+      prompt_hash: <span id="ph-label">233ec2cecfdfd80b3879531dfe64e2c1903f39fe0facc08f9bed6fcc064b33f5</span><br>
+      tools_hash: <span id="th-label">eb3e2243f23747297c1204e5e56f852f5e869f00cb97baae7786baefcabbc419</span>
+    </div>
+
+    <hr class="sep" />
+
+    <div style="background:#121d2f; border:1px solid #1f6feb; border-radius:6px; padding:0.5rem 0.65rem; font-size:0.7rem; color:#c9d1d9; line-height:1.5;">
+      <div style="color:#58a6ff; font-weight:700; margin-bottom:4px;">🛡️ Pre-Submission Audit</div>
+      <div>✅ <b>Loop:</b> <code style="color:#7ee787;">run_model_tool_loop</code> (shared)</div>
+      <div>✅ <b>Trace:</b> Tool calls, args, result/error</div>
+      <div>✅ <b>Audit:</b> Rounds, hashes, transcript path</div>
+    </div>
+
+    <hr class="sep" />
+
+    <div class="grid2">
+      <div>
+        <div class="field-label">History</div>
+        <input type="number" id="history-window" value="5" min="1" max="20" />
+      </div>
+      <div>
+        <div class="field-label">Max Rounds</div>
+        <input type="number" id="max-rounds" value="4" min="1" max="10" />
+      </div>
+    </div>
+
+    <hr class="sep" />
+
+    <button class="btn-clear" onclick="clearChat()">🗑 Clear Chat / New Session</button>
+
+    <div class="transcript-info" id="transcript-info">
+      Transcript: <span>no active session</span>
+    </div>
+
+    <hr class="sep" />
+
+    <div style="font-size:.7rem;color:var(--text-dim);line-height:1.6">
+      ℹ️ This HTML UI is a <b>static demo / documentation preview</b>.<br><br>
+      To run the <b>live agent</b> with real LLM and tools:<br>
+      <code style="color:var(--orange);font-family:'JetBrains Mono',monospace">
+        streamlit run app.py
+      </code><br>
+      (executing from <code style="color:var(--blue)">starter_v0/</code>).
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <div class="main">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-icon">🖥️</div>
+      <div style="flex:1;">
+        <h1>IT Helpdesk Agent</h1>
+        <p>Live Chat · Tool Audit · Transcript Logging — Day 04 Lab</p>
+      </div>
+      <div style="text-align:right;">
+        <span style="background:#121d2f; border:1px solid #1f6feb; border-radius:12px; padding:4px 10px; font-size:0.75rem; color:#58a6ff; font-family:'JetBrains Mono',monospace;">🔄 Shared Loop: run_model_tool_loop</span>
+      </div>
+    </div>
+
+    <!-- Chat area -->
+    <div class="chat-area" id="chat-area">
+      <!-- Welcome card shown before first message -->
+      <div class="welcome" id="welcome-card">
+        <h2>IT Helpdesk Agent</h2>
+        <p>
+          Agent có thể tra cứu trạng thái dịch vụ, kiểm tra thiết bị, tra cứu nhân viên,
+          tìm hướng dẫn trong KB và tạo ticket sau xác nhận.<br><br>
+          <em>Thử một trong các kịch bản demo bên dưới:</em>
+        </p>
+        <ul class="scenario-list" id="scenarios">
+          <li onclick="fillInput(this)">Kiểm tra trạng thái VPN production giúp mình.</li>
+          <li onclick="fillInput(this)">Inspect thiết bị LT-204 và cho mình biết diagnostic.</li>
+          <li onclick="fillInput(this)">Mình muốn tạo ticket lỗi Wi-Fi trên máy LT-240 mức medium.</li>
+          <li onclick="fillInput(this)">Tìm hướng dẫn khắc phục VPN không kết nối được.</li>
+          <li onclick="fillInput(this)">Tra cứu nhân viên EMP-1003 và liệt kê thiết bị được cấp.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Input bar -->
+    <div class="input-bar">
+      <textarea
+        class="chat-input"
+        id="chat-input"
+        placeholder="Nhập yêu cầu của bạn… (Enter để gửi, Shift+Enter xuống dòng)"
+        rows="1"
+      ></textarea>
+      <button class="btn-send" id="send-btn" onclick="sendMessage()" title="Gửi (Enter)">➤</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const state = {
+  messages: [],
+  turnIndex: 0,
+  transcriptId: null,
+};
+
+// Artifact hashes (real v0 hashes from versioning.py)
+const FAKE_HASHES = {
+  v0: { p: "233ec2cecfdfd80b3879531dfe64e2c1903f39fe0facc08f9bed6fcc064b33f5", t: "eb3e2243f23747297c1204e5e56f852f5e869f00cb97baae7786baefcabbc419", av: "v0+p233ec2cecfdf+teb3e2243f237" },
+  v1: { p: "4a8c9120e5f67890b1c2d3e4f5a6b7c8901234567890abcdef1234567890abcd", t: "7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c", av: "v1+p4a8c9120e5f6+t7b8c9d0e1f2a" },
+  v2: { p: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210", t: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", av: "v2+pfedcba987654+t1234567890ab" },
+  v3: { p: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890", t: "0987654321fedcba0987654321fedcba0987654321fedcba0987654321fedcba", av: "v3+pabcdef123456+t0987654321fe" },
+};
+
+// ── Version / hash display ─────────────────────────────────────────────────
+function updateHashDisplay() {
+  const v = document.getElementById("version").value;
+  const h = FAKE_HASHES[v] || FAKE_HASHES.v0;
+  document.getElementById("av-label").textContent = h.av || `${v}+p${h.p.slice(0,12)}+t${h.t.slice(0,12)}`;
+  document.getElementById("ph-label").textContent = h.p;
+  document.getElementById("th-label").textContent = h.t;
+}
+document.getElementById("version").addEventListener("change", updateHashDisplay);
+updateHashDisplay();
+
+// ── Input auto-resize ─────────────────────────────────────────────────────
+const input = document.getElementById("chat-input");
+input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = input.scrollHeight + "px"; });
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+// ── Fill input from scenario click ────────────────────────────────────────
+function fillInput(el) {
+  input.value = el.textContent.replace("▶  ", "").trim();
+  input.style.height = "auto";
+  input.style.height = input.scrollHeight + "px";
+  input.focus();
+}
+
+// ── Clear chat ────────────────────────────────────────────────────────────
+function clearChat() {
+  state.messages = [];
+  state.turnIndex = 0;
+  state.transcriptId = null;
+  const area = document.getElementById("chat-area");
+  area.innerHTML = `
+    <div class="welcome" id="welcome-card">
+      <h2>IT Helpdesk Agent</h2>
+      <p>Thử một trong các kịch bản demo bên dưới:</p>
+      <ul class="scenario-list">
+        <li onclick="fillInput(this)">Kiểm tra trạng thái VPN production giúp mình.</li>
+        <li onclick="fillInput(this)">Inspect thiết bị LT-204 và cho mình biết diagnostic.</li>
+        <li onclick="fillInput(this)">Mình muốn tạo ticket lỗi Wi-Fi trên máy LT-240 mức medium.</li>
+        <li onclick="fillInput(this)">Tìm hướng dẫn khắc phục VPN không kết nối được.</li>
+        <li onclick="fillInput(this)">Tra cứu nhân viên EMP-1003 và liệt kê thiết bị được cấp.</li>
+      </ul>
+    </div>`;
+  document.getElementById("transcript-info").innerHTML = "Transcript: <span>no active session</span>";
+}
+
+// ── Append bubble ─────────────────────────────────────────────────────────
+function appendBubble(role, content, status, toolEvents) {
+  const wc = document.getElementById("welcome-card");
+  if (wc) wc.remove();
+  const area = document.getElementById("chat-area");
+
+  const wrap = document.createElement("div");
+  wrap.className = "bubble-wrap";
+
+  if (role === "user") {
+    wrap.innerHTML = `
+      <div class="bubble-label label-user">👤 User Request (Turn #${state.turnIndex})</div>
+      <div class="bubble-user">${escHtml(content)}</div>`;
+  } else {
+    const badgeCls = status === "answered" ? "badge-answered"
+                   : status === "waiting_for_user" ? "badge-waiting" : "badge-error";
+    const badgeTxt = status === "answered" ? "Answered"
+                   : status === "waiting_for_user" ? "Waiting for user" : status;
+    const v = document.getElementById("version").value;
+    const h = FAKE_HASHES[v] || FAKE_HASHES.v0;
+    const avName = h.av || v;
+
+    wrap.innerHTML = `
+      <div class="bubble-label label-agent">
+        🤖 Final Response 
+        <span class="badge ${badgeCls}">${badgeTxt}</span>
+        <span class="badge" style="background:#1c2d42; color:#79c0ff; border:1px solid #1f6feb;">Round: 1/4</span>
+      </div>
+      <div class="bubble-agent">${escHtml(content)}</div>`;
+
+    if (toolEvents && toolEvents.length > 0) {
+      const traceId = "trace-" + Date.now();
+      const header = document.createElement("div");
+      header.className = "tool-trace-header";
+      header.innerHTML = `🔍 Tool Audit Trace (${toolEvents.length} call${toolEvents.length>1?"s":""} in Round 1) <span>▼</span>`;
+      header.onclick = () => {
+        const body = document.getElementById(traceId);
+        body.classList.toggle("open");
+        header.querySelector("span").textContent = body.classList.contains("open") ? "▲" : "▼";
+      };
+      const body = document.createElement("div");
+      body.className = "tool-trace-body";
+      body.id = traceId;
+      toolEvents.forEach(ev => {
+        const isErr = ev.result && ev.result.error;
+        body.innerHTML += `
+          <div class="tool-card">
+            <span class="tn">⚡ ${escHtml(ev.tool)}</span>
+            <span style="float:right; font-size:0.65rem; padding:1px 6px; border-radius:8px; ${isErr?'background:#3d0f0f;color:#f85149':'background:#196127;color:#7ee787'}">${isErr?'ERROR':'SUCCESS'}</span><br>
+            <b>Arguments:</b> <code style="color:#e6edf3;">${escHtml(JSON.stringify(ev.args))}</code><br>
+            <span class="${isErr?"terr":"tok"}">${isErr?"❌ Error:":"✅ Result:"}</span>
+            <pre style="white-space:pre-wrap; word-break:break-all; font-size:0.72rem; margin-top:2px;">${escHtml(JSON.stringify(ev.result, null, 2).slice(0,600))}</pre>
+          </div>`;
+      });
+      wrap.appendChild(header);
+      wrap.appendChild(body);
+    }
+
+    // Metadata footer
+    const footer = document.createElement("div");
+    footer.style.cssText = "font-size:0.7rem; color:var(--text-dim); margin-top:4px; display:flex; gap:12px;";
+    footer.innerHTML = `
+      <span>🏷️ Version: <code style="color:var(--blue);">${avName}</code></span>
+      <span>📄 Transcript: <code style="color:var(--orange);">${state.transcriptId ? state.transcriptId + '.transcript.json' : 'pending'}</code></span>
+    `;
+    wrap.appendChild(footer);
+  }
+
+  area.appendChild(wrap);
+  area.scrollTop = area.scrollHeight;
+}
+
+// ── Thinking indicator ─────────────────────────────────────────────────────
+function showThinking() {
+  const wc = document.getElementById("welcome-card");
+  if (wc) wc.remove();
+  const area = document.getElementById("chat-area");
+  const div = document.createElement("div");
+  div.className = "thinking";
+  div.id = "thinking-indicator";
+  div.innerHTML = `<div class="spinner"></div> Agent đang xử lý…`;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+}
+function hideThinking() {
+  const el = document.getElementById("thinking-indicator");
+  if (el) el.remove();
+}
+
+// ── Escape HTML ────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ── Demo agent simulation (used in HTML demo mode) ─────────────────────────
+const DEMO_RESPONSES = [
+  {
+    match: /vpn/i,
+    text: "Tôi đã kiểm tra trạng thái VPN production. Hiện tại dịch vụ đang hoạt động bình thường (status: operational). Không có incident nào được ghi nhận.",
+    status: "answered",
+    tool_events: [{tool:"check_service_status",args:{service:"vpn",environment:"production"},result:{status:"operational",last_check:"2026-09-14T10:00:00",incidents:[]}}],
+  },
+  {
+    match: /lt-204|lt204/i,
+    text: "Đã kiểm tra thiết bị LT-204. Đây là laptop Dell Latitude 5540, assigned cho nhân viên EMP-1002. Diagnostic: CPU 45%, RAM 67%, Disk 82% usage. Firewall: enabled, Encryption: enabled.",
+    status: "answered",
+    tool_events: [{tool:"inspect_device",args:{asset_id:"LT-204"},result:{asset_id:"LT-204",model:"Dell Latitude 5540",assigned_to:"EMP-1002",os:"Windows 11",cpu_pct:45,ram_pct:67,disk_pct:82}}],
+  },
+  {
+    match: /ticket.*wi.fi|wi.fi.*ticket/i,
+    text: "Để tạo ticket lỗi Wi-Fi cho máy LT-240, tôi cần xác nhận thông tin sau:\n• Asset: LT-240\n• Issue: Wi-Fi connectivity\n• Priority: medium\n\nBạn có xác nhận tạo ticket với thông tin trên không?",
+    status: "waiting_for_user",
+    tool_events: [{tool:"clarify",args:{question:"Xác nhận tạo ticket: LT-240, lỗi Wi-Fi, priority medium?"},result:{awaiting_user:true,question:"Xác nhận tạo ticket?"}}],
+  },
+  {
+    match: /hướng dẫn|khắc phục/i,
+    text: "Tìm thấy 2 bài trong Knowledge Base:\n1. **VPN Troubleshooting Guide** — Hướng dẫn kiểm tra cấu hình VPN client, reset credentials và liên hệ IT.\n2. **Network Connectivity Checklist** — Các bước chẩn đoán kết nối mạng từ cơ bản đến nâng cao.",
+    status: "answered",
+    tool_events: [{tool:"search_kb",args:{query:"VPN không kết nối được"},result:{articles:[{id:"KB-001",title:"VPN Troubleshooting Guide"},{id:"KB-007",title:"Network Connectivity Checklist"}]}}],
+  },
+  {
+    match: /emp-1003|nhân viên.*1003/i,
+    text: "Nhân viên EMP-1003: Nguyễn Văn A, Phòng Engineering, email: nva@company.com.\nThiết bị được cấp: LT-318 (MacBook Pro M3), KB-201 (Keyboard), MS-101 (Mouse).",
+    status: "answered",
+    tool_events: [{tool:"lookup_user",args:{employee_id:"EMP-1003"},result:{employee_id:"EMP-1003",name:"Nguyen Van A",department:"Engineering",devices:["LT-318","KB-201","MS-101"]}}],
+  },
+  {
+    match: /.*/,
+    text: "Cảm ơn bạn đã liên hệ IT Helpdesk. Tôi đã ghi nhận yêu cầu của bạn. Để hỗ trợ chính xác hơn, bạn có thể cung cấp thêm mã thiết bị (asset ID) hoặc mô tả chi tiết vấn đề không?",
+    status: "waiting_for_user",
+    tool_events: [{tool:"clarify",args:{question:"Bạn có thể cung cấp thêm thông tin về thiết bị hoặc vấn đề không?"},result:{awaiting_user:true}}],
+  },
+];
+
+function getDemoResponse(userText) {
+  for (const r of DEMO_RESPONSES) {
+    if (r.match.test(userText)) return { ...r };
+  }
+  return DEMO_RESPONSES[DEMO_RESPONSES.length-1];
+}
+
+// ── Send message ───────────────────────────────────────────────────────────
+async function sendMessage() {
+  const text = input.value.trim();
+  if (!text) return;
+
+  document.getElementById("send-btn").disabled = true;
+  input.value = "";
+  input.style.height = "auto";
+
+  state.turnIndex++;
+  appendBubble("user", text, null, null);
+
+  // Update transcript info
+  if (!state.transcriptId) {
+    const now = new Date().toISOString().replace(/[-:T]/g,"").slice(0,15);
+    const v = document.getElementById("version").value;
+    const p = document.getElementById("provider").value;
+    state.transcriptId = `${v}_${p}_${now}`;
+    document.getElementById("transcript-info").innerHTML =
+      `Transcript: <span>${state.transcriptId}.transcript.json</span>`;
+  }
+
+  showThinking();
+
+  // Simulate async agent response
+  await new Promise(r => setTimeout(r, 900 + Math.random()*600));
+
+  hideThinking();
+
+  const resp = getDemoResponse(text);
+  appendBubble("assistant", resp.text, resp.status, resp.tool_events);
+
+  document.getElementById("send-btn").disabled = false;
+  input.focus();
+}
+</script>
+</body>
+</html>

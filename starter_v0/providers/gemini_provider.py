@@ -75,7 +75,7 @@ class GeminiProvider:
         self,
         *,
         api_key_env: str = "GEMINI_API_KEY",
-        default_model: str = "gemini-3.5-flash",
+        default_model: str = "gemini-3.6-flash",
     ) -> None:
         self.api_key_env = api_key_env
         self.default_model = default_model
@@ -125,6 +125,23 @@ class GeminiProvider:
             config_kwargs["tools"] = [types.Tool(function_declarations=declarations)]
 
         client = genai.Client(api_key=api_key)
+        import time
+        max_retries = 6
+        resp = None
+        for attempt in range(max_retries):
+            try:
+                resp = client.models.generate_content(
+                    model=model or self.default_model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(**config_kwargs),
+                )
+                break
+            except Exception as exc:
+                if ("429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc)) and attempt < max_retries - 1:
+                    time.sleep(4 * (attempt + 1))
+                    continue
+                raise
+
         resp = self._generate_with_rate_limit_retry(
             client,
             model=model or self.default_model,
