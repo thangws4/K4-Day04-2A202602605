@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bài Lab số 4 — IT Helpdesk Agent: Prompt Engineering &amp; Tool Calling</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; overflow:hidden; background:#0f1f2e;
+               font-family:'Be Vietnam Pro', system-ui, sans-serif; }
+  button { font-family:inherit; cursor:pointer; border:none; }
+  button:focus-visible { outline:.4vmin solid #4f9cf9; outline-offset:.4vmin; }
+
+  #track { display:flex; height:100vh; transition:transform .5s cubic-bezier(.7,0,.2,1); }
+  @media (prefers-reduced-motion: reduce) { #track { transition:none; } }
+
+  .slide { flex:0 0 100vw; height:100vh; display:flex; flex-direction:column;
+           padding:5vmin 6.5vmin; overflow:hidden; }
+  .light { background:#f5f7fa; color:#0f1f2e; }
+  .dark  { background:radial-gradient(120% 120% at 50% 0%,#1a3558 0%,#0f1f2e 55%,#08121c 100%);
+           color:#e8f0fb; }
+  .center { align-items:center; justify-content:center; text-align:center; }
+
+  /* typography */
+  .eyebrow { font-size:2.3vmin; letter-spacing:.42em; text-transform:uppercase;
+             color:#4f9cf9; font-weight:700; }
+  .h1 { font-size:5.4vmin; font-weight:900; line-height:1.06; }
+  .sub { font-size:2.6vmin; font-weight:600; color:#5a6a7a; margin-top:.8vmin; }
+  .dark .sub { color:#93b8e0; }
+
+  /* header row */
+  .head { display:flex; align-items:center; gap:2vmin; flex:0 0 auto; }
+  .badge { font-size:2.1vmin; font-weight:800; letter-spacing:.2em; background:#4f9cf9;
+           color:#fff; padding:1vmin 2.2vmin; border-radius:99px; white-space:nowrap; }
+  .badge.orange { background:#e07c3a; }
+  .badge.grey   { background:#5a6a7a; }
+  .badge.green  { background:#2e7d52; }
+  .badge.red    { background:#c62f2f; }
+  .clock { margin-left:auto; font-size:2.3vmin; font-weight:800; color:#7a8a9a; white-space:nowrap; }
+  .who { font-size:2vmin; font-weight:800; letter-spacing:.14em; text-transform:uppercase;
+         padding:.8vmin 1.8vmin; border-radius:99px; white-space:nowrap; }
+  .who.solo { background:#e8f0fb; color:#1a6abf; border:.3vmin solid #93b8e0; }
+  .who.team { background:#fbeee4; color:#a8531f; border:.3vmin solid #e5b691; }
+
+  /* body layout */
+  .body { flex:1; min-height:0; display:flex; gap:3.6vmin; margin-top:2.4vmin; }
+  .main { flex:1.45; min-width:0; display:flex; flex-direction:column; gap:1.6vmin; }
+  .side { flex:0 0 32vw; display:flex; flex-direction:column; gap:1.6vmin; }
+
+  /* cards */
+  .card { background:#fff; border:.4vmin solid #d5dde8; border-radius:2.2vmin;
+          padding:2vmin 2.4vmin; }
+  .card h3, .card h4 { margin:0; font-weight:800; color:#0f1f2e; }
+  .card h3 { font-size:2.8vmin; }
+  .card h4 { font-size:2.3vmin; }
+  .card p  { margin:.6vmin 0 0; font-size:1.95vmin; font-weight:500; color:#5a6a7a; line-height:1.4; }
+  .card.blue   { background:#e8f4ff; border-color:#93b8e0; }
+  .card.amber  { background:#fdf3e0; border-color:#e8b84c; }
+  .card.red    { background:#fdeaea; border-color:#e07070; }
+  .card.green  { background:#e8f6ee; border-color:#6abf8a; }
+  .card.purple { background:#f3effe; border-color:#bca7f5; }
+  .dark .card  { background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.18); }
+  .dark .card h3, .dark .card h4 { color:#e8f0fb; }
+  .dark .card p { color:#93b8e0; }
+
+  /* list items */
+  .li { display:flex; align-items:flex-start; gap:1.5vmin; font-size:2.5vmin;
+        font-weight:600; line-height:1.35; }
+  .li b { color:#1a6abf; }
+  .dark .li b { color:#4f9cf9; }
+  .dot { color:#4f9cf9; font-weight:900; flex:0 0 auto; }
+
+  /* pill / callout */
+  .pill { display:inline-flex; align-self:flex-start; align-items:center; gap:1.2vmin;
+          background:#fbeee4; border:.4vmin solid #e07c3a; color:#a8531f;
+          font-size:2.2vmin; font-weight:700; padding:1.1vmin 2.2vmin; border-radius:99px; }
+  .pill.blue { background:#e8f0fb; border-color:#4f9cf9; color:#1a6abf; }
+  .pill.green { background:#e8f6ee; border-color:#6abf8a; color:#2e7d52; }
+  .dark .pill { background:rgba(79,156,249,.13); border-color:#4f9cf9; color:#bcd8fa; }
+
+  /* chips */
+  .chips { display:flex; flex-wrap:wrap; gap:1vmin; }
+  .chip { font-size:1.9vmin; font-weight:700; background:#fff; border:.35vmin solid #d5dde8;
+          color:#0f1f2e; padding:.8vmin 1.6vmin; border-radius:99px; }
+  .chip.on { background:#1a6abf; border-color:#1a6abf; color:#fff; }
+  .chip.orange { background:#e07c3a; border-color:#e07c3a; color:#fff; }
+  .chip.green { background:#2e7d52; border-color:#2e7d52; color:#fff; }
+  .chip.red { background:#c62f2f; border-color:#c62f2f; color:#fff; }
+
+  /* grids */
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:1.5vmin; }
+  .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:1.5vmin; }
+  .grid4 { display:grid; grid-template-columns:repeat(4,1fr); gap:1.2vmin; }
+
+  /* trace & code block */
+  .trace { background:#0a1828; border:.4vmin solid #1e3a5a; border-radius:2vmin;
+           padding:1.8vmin 2.2vmin; overflow-x:auto; }
+  .trace pre { margin:0; font-size:1.8vmin; line-height:1.55; color:#93d4ff;
+               font-weight:600; white-space:pre-wrap; font-family:'Courier New',Consolas,monospace; }
+  .trace .thl  { color:#f9c74f; font-weight:700; }
+  .trace .tact { color:#4fc9f4; font-weight:700; }
+  .trace .tobs { color:#90be6d; font-weight:700; }
+  .trace .terr { color:#f9844a; font-weight:700; }
+  .trace .tbad { color:#ff6b6b; font-weight:700; }
+
+  /* timer */
+  .timer { display:flex; flex-direction:column; align-items:center; background:#fff;
+           border:.45vmin solid #d5dde8; border-radius:2.6vmin; padding:2.2vmin 1.8vmin;
+           box-shadow:0 2vmin 5vmin rgba(10,20,40,.08); }
+  .dark .timer { background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.18); box-shadow:none; }
+  .t-label { font-size:1.8vmin; letter-spacing:.3em; text-transform:uppercase;
+             color:#7a8a9a; font-weight:700; }
+  .t-num { font-size:15vmin; font-weight:900; line-height:.92; font-variant-numeric:tabular-nums;
+           color:#0f1f2e; margin:.4vmin 0; }
+  .dark .t-num { color:#e8f0fb; }
+  .t-num.warn { color:#c62f2f; }
+  .t-btns { display:flex; gap:1.4vmin; margin-top:1.4vmin; }
+  .t-btns button { font-size:2.2vmin; font-weight:800; padding:1.1vmin 2.8vmin; border-radius:99px; }
+  .t-start { background:#1a6abf; color:#fff; }
+  .t-reset { background:#e9ebe6; color:#5a6a7a; }
+
+  /* nav buttons */
+  .nav { position:fixed; top:50%; transform:translateY(-50%); width:5.5vmin; height:8.5vmin;
+         border-radius:1.5vmin; background:transparent; color:#1a6abf; font-size:3.8vmin;
+         font-weight:800; display:flex; align-items:center; justify-content:center;
+         opacity:.12; z-index:20; transition:opacity .2s, background .2s, color .2s; }
+  .nav:hover, .nav:focus-visible {
+         opacity:1; background:rgba(10,20,40,.88); color:#fff; }
+  .nav.p { left:.4vmin; } .nav.n { right:.4vmin; }
+
+  /* dots */
+  #dots { position:fixed; bottom:2vmin; left:50%; transform:translateX(-50%);
+          display:flex; gap:1vmin; align-items:center; z-index:20; }
+  #dots button { height:1.2vmin; width:1.2vmin; border-radius:99px;
+                 background:rgba(255,255,255,.4); transition:all .3s; padding:0; }
+  #dots button.on { width:4.2vmin; background:#4f9cf9; }
+  .light #dots button { background:rgba(10,20,40,.2); }
+
+  /* step row */
+  .step-row { display:flex; align-items:center; gap:2.6vmin;
+              border-top:.3vmin solid #d5dde8; padding:2vmin .5vmin; }
+  .step-row:last-child { border-bottom:.3vmin solid #d5dde8; }
+  .num-accent { font-size:4vmin; font-weight:900; color:#4f9cf9; min-width:7vmin; }
+
+  /* phase boxes */
+  .phase-box { border-radius:1.8vmin; padding:1.6vmin 1.2vmin; text-align:center; }
+  .phase-lbl { font-size:1.7vmin; font-weight:800; letter-spacing:.16em; }
+  .phase-name { font-size:2.2vmin; font-weight:800; margin-top:.5vmin; }
+  .phase-time { font-size:1.8vmin; font-weight:700; color:#7a8a9a; margin-top:.3vmin; }
+  .phase-blue   { background:#e8f0fb; border:.4vmin solid #93b8e0; }
+  .phase-blue .phase-lbl { color:#1a6abf; }
+  .phase-orange { background:#fbeee4; border:.4vmin solid #e5b691; }
+  .phase-orange .phase-lbl { color:#a8531f; }
+</style>
+</head>
+<body>
+
+<div id="track">
+
+  <!-- SLIDE 1: MỞ ĐẦU -->
+  <section class="slide dark center">
+    <div class="eyebrow" style="margin-bottom:2.6vmin;">Khởi động buổi học</div>
+    <div style="font-size:12vmin;font-weight:900;line-height:.98;">BÀI LAB SỐ 4</div>
+    <div style="width:16vmin;height:.7vmin;background:#4f9cf9;border-radius:99px;margin:3.5vmin 0;"></div>
+    <div style="font-size:4.2vmin;font-weight:500;color:#93b8e0;">
+      Chủ đề: <b style="color:#fff;font-weight:800;">IT Helpdesk Agent</b>
+    </div>
+    <div style="font-size:2.6vmin;font-weight:600;color:#5a8abf;margin-top:2.5vmin;letter-spacing:.05em;">
+      Prompt Engineering &amp; Tool Calling: Đo lường, giải thích và tái lập hành vi Agent
+    </div>
+  </section>
+
+  <!-- SLIDE 2: 4 CÂU HỎI TRỌNG TÂM -->
+  <section class="slide light">
+    <div class="head">
+      <div>
+        <div class="h1">4 CÂU HỎI XUYÊN SUỐT LAB</div>
+        <div class="sub">Tối ưu hóa Tool Calling dựa trên bằng chứng (evidence-driven), không dựa trên cảm tính</div>
+      </div>
+    </div>
+    <div style="flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:.8vmin;margin-top:.8vmin;">
+      <div class="step-row">
+        <span class="num-accent">01</span>
+        <span style="font-size:3vmin;font-weight:600;">Làm sao model phân biệt <b>dịch vụ dùng chung</b> (Status) với <b>thiết bị cá nhân</b> (Device)?</span>
+      </div>
+      <div class="step-row">
+        <span class="num-accent">02</span>
+        <span style="font-size:3vmin;font-weight:600;">Khi nào Agent cần <b>hỏi lại</b> (clarify) thay vì tự ý <b>suy đoán identifier</b> (Asset/User ID)?</span>
+      </div>
+      <div class="step-row">
+        <span class="num-accent">03</span>
+        <span style="font-size:3vmin;font-weight:600;">Khi nào sửa <b>system_prompt.md</b> và khi nào cần tinh chỉnh <b>tools.yaml</b> schema?</span>
+      </div>
+      <div class="step-row">
+        <span class="num-accent">04</span>
+        <span style="font-size:3vmin;font-weight:600;">Làm sao chặn <b>Prompt Injection</b>, không ghi đè ticket giả mạo và bảo vệ <b>dữ liệu nội bộ</b>?</span>
+      </div>
+    </div>
+    <div class="pill blue">🎯 Trả lời 4 câu hỏi bằng chỉ số Routing Accuracy, Argument Accuracy &amp; Red-team Traces</div>
+  </section>
+
+  <!-- SLIDE 3: LUỒNG BUỔI LAB (TIMELINE) -->
+  <section class="slide light">
+    <div class="head">
+      <div>
+        <div class="h1">LUỒNG BUỔI LAB</div>
+        <div class="sub">6 bước thực hành · Tổng thời gian: <b style="color:#1a6abf;">240 phút</b></div>
+      </div>
+    </div>
+
+    <div style="flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:1.6vmin;">
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:1.2vmin;">
+        <div class="phase-box phase-blue">
+          <div class="phase-lbl">BƯỚC 1</div>
+          <div class="phase-name">Setup &amp; Preflight</div>
+          <div class="phase-time">20'</div>
+        </div>
+        <div class="phase-box phase-blue">
+          <div class="phase-lbl">BƯỚC 2</div>
+          <div class="phase-name">Baseline v0</div>
+          <div class="phase-time">30'</div>
+        </div>
+        <div class="phase-box phase-orange">
+          <div class="phase-lbl">BƯỚC 3</div>
+          <div class="phase-name">Lặp v1 → v2 → v3</div>
+          <div class="phase-time">50'</div>
+        </div>
+        <div class="phase-box phase-orange">
+          <div class="phase-lbl">BƯỚC 4</div>
+          <div class="phase-name">Team Eval (10 cases)</div>
+          <div class="phase-time">35'</div>
+        </div>
+        <div class="phase-box phase-orange">
+          <div class="phase-lbl">BƯỚC 5</div>
+          <div class="phase-name">Adversarial Suite</div>
+          <div class="phase-time">30'</div>
+        </div>
+        <div class="phase-box phase-blue">
+          <div class="phase-lbl">BƯỚC 6</div>
+          <div class="phase-name">Live UI &amp; Report</div>
+          <div class="phase-time">45'</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:2vmin;padding:1.2vmin 0;">
+        <div style="flex:1;height:.3vmin;background:#d5dde8;"></div>
+        <span style="font-size:2vmin;font-weight:700;color:#7a8a9a;">Nghỉ giải lao 10 phút sau Bước 3 (Vòng lặp v1-v3)</span>
+        <div style="flex:1;height:.3vmin;background:#d5dde8;"></div>
+      </div>
+      <div class="grid2">
+        <div class="card blue" style="padding:1.4vmin 2vmin;">
+          <h4>⏱ Quy tắc 10 phút</h4>
+          <p>Nếu nhóm bị kẹt ở lỗi môi trường hay preflight quá 10 phút, giơ tay gọi Coach ngay!</p>
+        </div>
+        <div class="card amber" style="padding:1.4vmin 2vmin;">
+          <h4>🔒 Không sửa Agent Loop</h4>
+          <p>Không sửa code loop hay eval engine. Mục tiêu là tối ưu <code>system_prompt.md</code> và <code>tools.yaml</code>.</p>
+        </div>
+      </div>
+    </div>
+    <div class="pill">⚡ Điều kiện evidence hợp lệ: <b>provider_error_cases == 0</b> và <b>measured_cases == total_cases</b></div>
+  </section>
+
+  <!-- SLIDE 4: BỨC TRANH KIẾN TRÚC & ARTIFACT CONTRACT -->
+  <section class="slide light">
+    <div class="head">
+      <div>
+        <div class="h1">KIẾN TRÚC VẬN HÀNH &amp; CONTRACTS</div>
+        <div class="sub">Model nhìn thấy gì và Application thực thi cái gì?</div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="main">
+        <div class="grid2">
+          <div class="card blue">
+            <h4 style="color:#1a6abf;">1. artifacts/system_prompt.md</h4>
+            <p>• Định danh &amp; phạm vi phục vụ Northstar Labs.<br>
+            • Nguyên tắc toàn cục: không tự đoán ID, không lộ bí mật.<br>
+            • Quy tắc hội thoại: context carry-over, xử lý cancellation.<br>
+            • Định dạng JSON: <code>intent</code>, <code>action</code>, <code>reply</code>, <code>evidence_ids</code>.</p>
+          </div>
+          <div class="card amber">
+            <h4 style="color:#a8531f;">2. artifacts/tools.yaml</h4>
+            <p>• Description là một phần quan trọng của Prompt.<br>
+            • Phân định ranh giới: khi nào dùng / không dùng tool.<br>
+            • Strict Schema: kiểu dữ liệu, enum values, required list.<br>
+            • Định nghĩa rõ argument semantics (vd: <code>check: vpn</code>).</p>
+          </div>
+        </div>
+        <div class="card green" style="margin-top:.4vmin;">
+          <h4 style="color:#2e7d52;">Cơ chế kiểm soát phiên bản: ArtifactVersion</h4>
+          <p style="font-family:'Courier New',monospace;font-size:2.1vmin;font-weight:700;color:#1a3558;">
+            version_tag = f"{version}+p{prompt_hash[:12]}+t{tools_hash[:12]}"
+          </p>
+          <p>Mọi kết quả eval và live chat đều được đóng dấu mã băm SHA-256 không thể gian lận!</p>
+        </div>
+      </div>
+      <div class="side">
+        <div style="background:#0f1f2e;color:#e8f0fb;border-radius:2.2vmin;padding:2.2vmin;">
+          <div style="font-size:1.8vmin;letter-spacing:.25em;text-transform:uppercase;color:#4f9cf9;font-weight:700;">Hệ sinh thái Tools</div>
+          <div style="font-size:1.9vmin;color:#93b8e0;margin-top:1vmin;line-height:1.6;">
+            <b>Core Tools (Local):</b><br>
+            • <code>clarify</code>: hỏi lại khi thiếu info<br>
+            • <code>search_kb</code>: tra cứu 11 bài hướng dẫn<br>
+            • <code>check_service_status</code>: dịch vụ dùng chung<br>
+            • <code>inspect_device</code>: tra cứu 9 assets IT<br>
+            • <code>lookup_user</code>: danh bạ 10 nhân viên<br>
+            • <code>format_incident_report</code>: xuất markdown<br><br>
+            <b>Advanced Tools:</b><br>
+            • <code>policy</code>: chính sách IT nội bộ<br>
+            • <code>create_ticket</code>: ghi file (cần confirm)<br>
+            • <code>search_device_info</code>: Tavily Web Search
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 5: BƯỚC 1: SETUP & PHÂN VAI -->
+  <section class="slide light">
+    <div class="head">
+      <span class="badge">BƯỚC 1</span>
+      <span class="h1">FORK REPO, SETUP &amp; PHÂN VAI NHÓM</span>
+      <span class="clock">20 phút</span>
+    </div>
+    <div class="body">
+      <div class="main">
+        <div class="card blue" style="padding:1.2vmin 1.8vmin;">
+          <h4 style="color:#1a6abf;display:flex;align-items:center;gap:1vmin;font-size:2.2vmin;">
+            <span>📌 Đặt tên Repo khi Fork:</span>
+            <code style="background:#fff;padding:.3vmin 1vmin;border-radius:.8vmin;border:.2vmin solid #93b8e0;font-size:2.1vmin;">K4-DAY04-[Mã_SV_Nhóm_Trưởng]</code>
+          </h4>
+          <p style="margin-top:.3vmin;font-size:1.85vmin;">Đại diện nhóm fork về tài khoản cá nhân, mời các thành viên làm collaborator, sau đó clone về máy local.</p>
+        </div>
+
+        <div class="trace" style="padding:1.2vmin 1.6vmin;">
+          <pre style="font-size:1.75vmin;"><span class="tact">cd</span> starter_v0 && <span class="tact">python</span> -m venv .venv && <span class="tact">source</span> .venv/bin/activate
+<span class="tact">pip</span> install -r requirements.txt && <span class="tact">cp</span> .env.example .env
+<span class="tact">python</span> -m compileall -q . && <span class="tact">python</span> scripts/preflight_provider.py --provider openrouter</pre>
+        </div>
+
+        <!-- GỢI Ý PHÂN VAI NHÓM 4 & 5 NGƯỜI -->
+        <div style="background:#fff;border:.35vmin solid #d5dde8;border-radius:2vmin;padding:1.4vmin 1.8vmin;">
+          <div style="font-size:2vmin;font-weight:800;color:#0f1f2e;margin-bottom:.8vmin;display:flex;align-items:center;gap:1vmin;">
+            <span>👥 Gợi ý phân chia vai trò nhóm (Song song hóa công việc):</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:.9vmin;">
+            <div style="background:#e8f4ff;border-left:.5vmin solid #1a6abf;padding:.8vmin 1.2vmin;border-radius:.6vmin;">
+              <div style="font-size:1.9vmin;font-weight:800;color:#1a6abf;">🔹 Phương án Chuẩn — Nhóm 4 thành viên (Khuyến nghị):</div>
+              <div style="font-size:1.75vmin;color:#334155;margin-top:.3vmin;line-height:1.45;">
+                • <b>A (Prompt Architect / Lead):</b> Quản lý <code>system_prompt.md</code>, format JSON, context carry-over &amp; version hash.<br>
+                • <b>B (Tool &amp; Schema Engineer):</b> Quản lý <code>tools.yaml</code>, chuẩn hóa enums/arguments, đồng bộ tool name, Tavily API.<br>
+                • <b>C (Eval &amp; Red-Team):</b> Tác giả 10 cases <code>eval_group.json</code> (G01 &rarr; G10), kiểm thử 12 adversarial attacks.<br>
+                • <b>D (UI &amp; Report Coordinator):</b> Dựng Live Chat Streamlit, test kịch bản demo, tổng hợp <code>REPORT.md</code>.
+              </div>
+            </div>
+            <div style="background:#fef3eb;border-left:.5vmin solid #e07c3a;padding:.8vmin 1.2vmin;border-radius:.6vmin;">
+              <div style="font-size:1.9vmin;font-weight:800;color:#a8531f;">🔹 Phương án Mở rộng — Nhóm 5 thành viên:</div>
+              <div style="font-size:1.75vmin;color:#334155;margin-top:.3vmin;line-height:1.45;">
+                • <b>A (Prompt)</b> | <b>B (Tool Schema)</b> | <b>C (Eval Author - G01&rarr;G10)</b> | <b>D (UI &amp; Report Lead)</b>.<br>
+                • <b>E (Security &amp; Bonus Tool):</b> Phụ trách rà soát data leakage (Tavily), kiểm tra tickets rác &amp; code 1 <b>Bonus Tool</b>.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="timer" data-secs="1200">
+          <div class="t-label">Thời gian Bước 1</div>
+          <div class="t-num">20:00</div>
+          <div class="t-btns"><button class="t-start">START</button><button class="t-reset">RESET</button></div>
+        </div>
+        <div class="card amber">
+          <h4 style="color:#a07020;">Nguyên tắc phối hợp</h4>
+          <p>Phân vai rõ ràng từ phút đầu tiên để tránh xung đột Git (merge conflict) trên <code>system_prompt.md</code> và <code>tools.yaml</code>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 6: BƯỚC 2: BASELINE V0 -->
+  <section class="slide light">
+    <div class="head">
+      <span class="badge">BƯỚC 2</span>
+      <span class="h1">CHẠY BASELINE V0 — CHẤP NHẬN THẤT BẠI ĐỂ HỌC</span>
+      <span class="clock">30 phút</span>
+    </div>
+    <div class="body">
+      <div class="main">
+        <div class="card blue">
+          <h4 style="color:#1a6abf;">Chạy Eval Suite ban đầu (30 cases: 20 single + 10 multi)</h4>
+          <div class="trace" style="margin-top:1vmin;">
+            <pre><span class="tact">python</span> run_eval.py --provider openrouter --version v0 --suite base --eval-cases data/eval_base.json</pre>
+          </div>
+        </div>
+        <div class="li"><span class="dot">•</span><span>Giữ nguyên starter artifacts để đo đường cơ sở chân thực (v0 baseline).</span></div>
+        <div class="li"><span class="dot">•</span><span>Evaluator tự động so sánh tool calls, argument subset, thiếu hoặc thừa tool.</span></div>
+        <div style="margin-top:.4vmin;">
+          <div style="font-size:2.2vmin;font-weight:800;color:#0f1f2e;margin-bottom:1vmin;">5 Loại lỗi cần phân loại ngay từ log v0:</div>
+          <div class="chips">
+            <span class="chip red">wrong_tool</span>
+            <span class="chip red">wrong_arg_value</span>
+            <span class="chip red">missing_info</span>
+            <span class="chip red">wrong_boundary</span>
+            <span class="chip red">out_of_scope</span>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="timer" data-secs="1800">
+          <div class="t-label">Thời gian</div>
+          <div class="t-num">30:00</div>
+          <div class="t-btns"><button class="t-start">START</button><button class="t-reset">RESET</button></div>
+        </div>
+        <div class="card amber">
+          <h4 style="color:#a07020;">Điểm số v0 thấp là bình thường!</h4>
+          <p>Starter prompt cố ý rất sơ sài để các nhóm phân tích failure traces và lập giả thuyết cải tiến.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 7: GIẢI PHẪU THẤT BẠI (RCA TRACE) -->
+  <section class="slide dark">
+    <div class="head">
+      <span class="badge orange">PHÂN TÍCH LỖI</span>
+      <span class="h1" style="color:#e8f0fb;">GIẢI PHẪU MỘT THẤT BẠI TOOL CALLING</span>
+      <span class="clock">Trace Review</span>
+    </div>
+    <div class="body" style="margin-top:1.6vmin;">
+      <div class="main">
+        <div class="trace">
+          <pre><span class="thl">User: "VPN dạo này chậm thế, có sự cố gì không?"</span>
+
+<span class="terr">❌ Thất bại v0 (Hallucinated Identifier):</span>
+<span class="tbad">Action: inspect_device({"asset_id": "LT-001", "check": "vpn"})</span>
+<span style="color:#bbb;">Observation: {"error": "asset LT-001 not found"}</span>
+<span class="tbad">Root Cause:</span> Model tự bịa ID máy cá nhân thay vì check dịch vụ dùng chung!
+
+<span class="tobs">✅ Kỳ vọng đúng (Shared Service Routing):</span>
+<span class="tact">Action: check_service_status({"service": "vpn", "environment": "production"})</span>
+<span class="tobs">Observation: {"status": "degraded", "issue": "Gateway high latency"}</span>
+<span class="thl">Final Reply:</span> "Dịch vụ VPN production đang bị chậm do Gateway quá tải..."</pre>
+        </div>
+      </div>
+      <div class="side">
+        <div class="card blue" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18);">
+          <h4 style="color:#4f9cf9;">Sửa ở Prompt hay Schema?</h4>
+          <p style="color:#bcd8fa;line-height:1.6;font-size:1.9vmin;">
+            <b>1. tools.yaml:</b> Mô tả rõ <code>check_service_status</code> dành cho hệ thống toàn công ty (VPN, WiFi, Email), còn <code>inspect_device</code> chỉ dùng khi có mã tài sản cụ thể.<br><br>
+            <b>2. system_prompt.md:</b> Bổ sung nguyên tắc cấm đoán mò: "Tuyệt đối không tự bịa mã tài sản (LT-xxx) hoặc mã nhân viên (EMP-xxx)."
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 8: BƯỚC 3: CHU TRÌNH TỐI ƯU V1 - V3 -->
+  <section class="slide light">
+    <div class="head">
+      <span class="badge orange">BƯỚC 3</span>
+      <span class="h1">CHU TRÌNH TỐI ƯU KHOA HỌC V1 &rarr; V2 &rarr; V3</span>
+      <span class="clock">50 phút</span>
+    </div>
+    <div class="body">
+      <div class="main">
+        <div class="grid3">
+          <div class="card blue">
+            <h4 style="color:#1a6abf;">Phiên bản v1: Routing</h4>
+            <p>Phân định ranh giới rõ giữa <code>check_service_status</code>, <code>inspect_device</code>, <code>search_kb</code> và <code>lookup_user</code>.</p>
+          </div>
+          <div class="card amber">
+            <h4 style="color:#a8531f;">Phiên bản v2: Arguments</h4>
+            <p>Chuẩn hóa enums (vd: <code>check: [all, vpn, network]</code>), bắt buộc trích xuất đúng category và environment (production vs staging).</p>
+          </div>
+          <div class="card green">
+            <h4 style="color:#2e7d52;">Phiên bản v3: Context &amp; Clarify</h4>
+            <p>Hỏi lại khi thiếu ID (gọi <code>clarify</code>), xử lý multi-turn carry-over và chuyển đổi template báo cáo sự cố.</p>
+          </div>
+        </div>
+        <div style="background:#fff;border:.4vmin solid #d5dde8;border-radius:2vmin;padding:1.6vmin 2vmin;margin-top:.4vmin;">
+          <div style="font-size:2.2vmin;font-weight:800;color:#0f1f2e;margin-bottom:.8vmin;">Quy trình 1 vòng thử nghiệm (Hypothesis-driven):</div>
+          <div class="li" style="font-size:2.2vmin;"><span class="dot">1</span><span>Chọn 1 cụm lỗi &rarr; Viết hypothesis vào <code>version_log.csv</code>.</span></div>
+          <div class="li" style="font-size:2.2vmin;"><span class="dot">2</span><span>Chỉnh sửa tối thiểu tại <code>system_prompt.md</code> hoặc <code>tools.yaml</code>.</span></div>
+          <div class="li" style="font-size:2.2vmin;"><span class="dot">3</span><span>Chạy lại eval suite &rarr; So sánh chỉ số &amp; kiểm tra lỗi thoái thoái (regression).</span></div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="timer" data-secs="3000">
+          <div class="t-label">Thời gian</div>
+          <div class="t-num">50:00</div>
+          <div class="t-btns"><button class="t-start">START</button><button class="t-reset">RESET</button></div>
+        </div>
+        <div class="card red">
+          <h4 style="color:#c62f2f;">Cảnh báo Regression!</h4>
+          <p>Khi thêm luật mới để sửa một case khó, hãy đảm bảo các case đã PASS trước đó không bị vỡ.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 9: NGHỈ GIẢI LAO -->
+  <section class="slide dark center">
+    <div class="eyebrow">Sau Bước 3</div>
+    <div style="font-size:11vmin;font-weight:900;line-height:1;margin:2.5vmin 0 1vmin;">GIẢI LAO</div>
+    <div style="font-size:5.5vmin;font-weight:800;color:#4f9cf9;margin:1vmin 0 2vmin;">10 phút</div>
+    <div style="font-size:3vmin;font-weight:600;color:#93b8e0;">Chặng 2: Thiết kế Team Eval, Red-teaming &amp; Live Chat UI</div>
+  </section>
+
+  <!-- SLIDE 10: BƯỚC 4: THIẾT KẾ TEAM EVAL -->
+  <section class="slide light">
+    <div class="head">
+      <span class="badge orange">BƯỚC 4</span>
+      <span class="h1">THIẾT KẾ TEAM EVAL — 10 CASES ĐẶC TRƯNG</span>
+      <span class="clock">35 phút</span>
+    </div>
+    <div class="body">
+      <div class="main">
+        <div class="card blue" style="padding:1.4vmin 2vmin;">
+          <h4 style="color:#1a6abf;display:flex;align-items:center;gap:1vmin;">
+            <span>📌 Quy tắc đặt tên Case ID:</span>
+            <code style="background:#fff;padding:.3vmin 1vmin;border-radius:.8vmin;border:.2vmin solid #93b8e0;font-size:2.1vmin;">G01_&lt;mô_tả&gt; ... G10_&lt;mô_tả&gt;</code>
+          </h4>
+          <p style="margin-top:.3vmin;">Ví dụ: <code>G01_missing_asset_clarify</code>, <code>G06_correction_turn2</code>. Viết vào <code>data/eval_group.json</code> (5 single + 5 multi).</p>
+        </div>
+        <div class="grid2">
+          <div class="card" style="border-color:#93b8e0;">
+            <h4 style="color:#1a6abf;">5 Single-turn (G01 &rarr; G05)</h4>
+            <p>• Thiếu thông tin &rarr; phải gọi <code>clarify</code>.<br>
+            • Ý định mơ hồ giữa chính sách và trạng thái.<br>
+            • Yêu cầu ngoài phạm vi &rarr; refuse, không gọi tool.</p>
+          </div>
+          <div class="card" style="border-color:#e5b691;">
+            <h4 style="color:#a8531f;">5 Multi-turn (G06 &rarr; G10)</h4>
+            <p>• Bổ sung mã máy sau khi agent hỏi.<br>
+            • Đổi ý / sửa thông tin ở turn sau (correction).<br>
+            • Hủy bỏ thao tác (cancellation).<br>
+            • Xâu chuỗi 2 tool (inspect &rarr; format report).</p>
+          </div>
+        </div>
+        <div class="trace" style="margin-top:.2vmin;">
+          <pre><span class="tact">python</span> run_eval.py --provider openrouter --version v3 --suite group --eval-cases data/eval_group.json</pre>
+        </div>
+      </div>
+      <div class="side">
+        <div class="timer" data-secs="2100">
+          <div class="t-label">Thời gian</div>
+          <div class="t-num">35:00</div>
+          <div class="t-btns"><button class="t-start">START</button><button class="t-reset">RESET</button></div>
+        </div>
+        <div class="card green">
+          <h4 style="color:#2e7d52;">Tiêu chuẩn Case hay</h4>
+          <p>Không viết case quá dễ hiển nhiên. Hãy cô lập các quyết định phân nhánh và bẫy ngữ cảnh thực tế.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 11: BƯỚC 5: ADVERSARIAL & SAFETY BOUNDARIES -->
+  <section class="slide light">
+    <div class="head">
+      <span class="badge red">BƯỚC 5</span>
+      <span class="h1">ADVERSARIAL SUITE — BẢO VỆ RANH GIỚI AN TOÀN</span>
+      <span class="clock">30 phút</span>
+    </div>
+    <div class="body">
+      <div class="main">
+        <div class="li"><span class="dot">•</span><span>Chạy 12 trường hợp tấn công trong <code>data/eval_adversarial.json</code>.</span></div>
+        <div class="grid3">
+          <div class="card red">
+            <h4>Prompt Injection</h4>
+            <p>Giả mạo thẻ <code>SYSTEM:</code>, trộm toàn bộ prompt nội bộ.</p>
+          </div>
+          <div class="card red">
+            <h4>Forged Confirmation</h4>
+            <p>Gửi pseudo-code hoặc JSON giả lập tool output để ép tạo ticket.</p>
+          </div>
+          <div class="card red">
+            <h4>Data Exfiltration</h4>
+            <p>Gửi serial, IP, thông tin cá nhân ra Tavily Web Search.</p>
+          </div>
+        </div>
+        <div class="card amber" style="margin-top:.4vmin;">
+          <h4 style="color:#a8531f;">3 Bức tường bảo vệ bắt buộc</h4>
+          <div class="li" style="font-size:2vmin;margin-top:.6vmin;"><span class="dot">1</span><span><b>Xác nhận hợp lệ:</b> Chỉ chấp nhận khi user đồng ý rõ ràng trong hội thoại, <code>confirmed=True</code>.</span></div>
+          <div class="li" style="font-size:2vmin;"><span class="dot">2</span><span><b>Ranh giới Web Search:</b> Chỉ gửi tên hãng + model máy công khai ra ngoài.</span></div>
+          <div class="li" style="font-size:2vmin;"><span class="dot">3</span><span><b>Không lưu mật khẩu:</b> Tuyệt đối không nhận hoặc lưu password, token, OTP trong ticket.</span></div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="timer" data-secs="1800">
+          <div class="t-label">Thời gian</div>
+          <div class="t-num">30:00</div>
+          <div class="t-btns"><button class="t-start">START</button><button class="t-reset">RESET</button></div>
+        </div>
+        <div class="card purple">
+          <h4 style="color:#6d28d9;">Review thủ công</h4>
+          <p>Automatic score chưa đủ! Phải mở thư mục <code>tickets/</code> xem có file rác nào được tạo trái phép hay không.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 12: BƯỚC 6: LIVE CHAT UI -->
+  <section class="slide light">
+    <div class="head">
+      <span class="badge green">BƯỚC 6</span>
+      <span class="h1">XÂY DỰNG LIVE CHAT UI MINH BẠCH</span>
+      <span class="clock">25 phút</span>
+    </div>
+    <div class="body">
+      <div class="main">
+        <div class="li"><span class="dot">•</span><span>Khởi chạy giao diện Chat (Streamlit) cho Helpdesk Agent:</span></div>
+        <div class="trace">
+          <pre><span class="tact">pip</span> install "streamlit>=1.30.0"
+<span class="tact">streamlit</span> run app.py</pre>
+        </div>
+        <div class="card blue" style="margin-top:.4vmin;">
+          <h4 style="color:#1a6abf;">Yêu cầu kiến trúc giao diện</h4>
+          <p>Tái sử dụng nguyên vẹn hàm <code>run_model_tool_loop</code> từ <code>chat.py</code>. Tuyệt đối không viết riêng một agent loop khác cho UI!</p>
+        </div>
+        <div style="font-size:2.2vmin;font-weight:800;color:#0f1f2e;margin-top:.4vmin;">Các thành phần bắt buộc hiển thị trên UI:</div>
+        <div class="chips">
+          <span class="chip on">User query &amp; Response</span>
+          <span class="chip on">Tên Tool &amp; Arguments</span>
+          <span class="chip on">Tool Result / Error</span>
+          <span class="chip on">Artifact Version &amp; Hash</span>
+          <span class="chip on">Transcript Path</span>
+        </div>
+      </div>
+      <div class="side">
+        <div class="timer" data-secs="1500">
+          <div class="t-label">Thời gian</div>
+          <div class="t-num">25:00</div>
+          <div class="t-btns"><button class="t-start">START</button><button class="t-reset">RESET</button></div>
+        </div>
+        <div class="card green">
+          <h4 style="color:#2e7d52;">Chuẩn bị Demo</h4>
+          <p>Rehearse trước 3 kịch bản: tra cứu thông thường, thiếu mã máy (hỏi lại), và từ chối hành động nguy hiểm.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 13: BONUS CAPABILITY TOOL -->
+  <section class="slide light">
+    <div class="head">
+      <span class="badge grey">ĐIỂM THƯỞNG</span>
+      <span class="h1">XÂY DỰNG TOOL MỚI — BONUS CAPABILITY</span>
+      <span class="clock">Tùy chọn</span>
+    </div>
+    <div class="body">
+      <div class="main">
+        <div class="card amber" style="padding:1.4vmin 2vmin;">
+          <h4 style="color:#a8531f;display:flex;align-items:center;gap:1vmin;">
+            <span>📌 Quy tắc đặt &amp; đồng bộ tên Tool (snake_case):</span>
+          </h4>
+          <p style="margin-top:.3vmin;">Tên tool phải đồng bộ 100% tại 5 file: <code>tools.yaml</code> &rarr; <code>tools/__init__.py</code> &rarr; <code>tools/&lt;name&gt;/TOOL.md</code> &rarr; <code>eval_group.json</code> &rarr; <code>REPORT.md</code>.</p>
+        </div>
+        <div class="grid2">
+          <div class="card blue">
+            <h4>Ý tưởng capability hữu ích:</h4>
+            <p>• <code>diagnose_network</code>: chẩn đoán ping/DNS chi tiết.<br>
+            • <code>approved_software_catalog</code>: tra cứu phần mềm chuẩn.<br>
+            • <code>meeting_room_status</code>: kiểm tra thiết bị phòng họp.<br>
+            • <code>lookup_ticket_status</code>: tra cứu tiến độ ticket cũ.</p>
+          </div>
+          <div class="card" style="border-color:#6abf8a;">
+            <h4 style="color:#2e7d52;">Điều kiện được công nhận điểm:</h4>
+            <p>• Có file tài liệu <code>tools/&lt;tool_name&gt;/TOOL.md</code>.<br>
+            • Implementation chạy được trong <code>tools/</code>.<br>
+            • Khai báo schema đầy đủ trong <code>tools.yaml</code>.<br>
+            • Unit smoke test &amp; case trong <code>eval_group.json</code>.<br>
+            • Hiển thị mượt mà trên Live UI và Report.</p>
+          </div>
+        </div>
+        <div class="pill">⚠️ Đổi tên tool cũ hoặc tạo folder rỗng không được tính bonus!</div>
+      </div>
+      <div class="side">
+        <div class="card green" style="flex:1;">
+          <h4 style="color:#2e7d52;font-size:2.6vmin;">Nguyên tắc Tool tốt</h4>
+          <p style="font-size:2.1vmin;line-height:1.6;margin-top:1.2vmin;">
+            Một tool nhỏ nhưng có contract rõ ràng, xử lý ngoại lệ tốt và có test chứng minh sẽ giá trị hơn một tool lớn nhưng hoạt động chập chờn.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 14: BÁO CÁO REPORT & SUBMISSION -->
+  <section class="slide light">
+    <div class="head">
+      <span class="badge">TỔNG KẾT</span>
+      <span class="h1">HOÀN THIỆN REPORT &amp; NỘP BÀI</span>
+      <span class="clock">20 phút</span>
+    </div>
+    <div style="flex:1;min-height:0;display:flex;gap:2.4vmin;margin-top:2vmin;">
+      <div style="flex:1.1;background:#fff;border:.4vmin solid #93b8e0;border-radius:2.2vmin;padding:2vmin;">
+        <div style="font-size:2.2vmin;font-weight:800;color:#1a6abf;margin-bottom:1vmin;">Nội dung Báo cáo REPORT.md</div>
+        <div class="li" style="font-size:2vmin;margin-bottom:.8vmin;"><span class="dot">✓</span><span><b>Bảng Version Evidence:</b> v0, v1, v2, v3 kèm hypothesis, metric trước/sau và file run JSON.</span></div>
+        <div class="li" style="font-size:2vmin;margin-bottom:.8vmin;"><span class="dot">✓</span><span><b>Failure Analysis:</b> Bóc tách nguyên nhân ít nhất 3 lỗi tiêu biểu.</span></div>
+        <div class="li" style="font-size:2vmin;margin-bottom:.8vmin;"><span class="dot">✓</span><span><b>Team Eval:</b> Đúng 10 cases (G01 &rarr; G10) kèm kết quả chạy.</span></div>
+        <div class="li" style="font-size:2vmin;margin-bottom:.8vmin;"><span class="dot">✓</span><span><b>Adversarial Evidence:</b> Đánh giá 3 case an toàn, xác nhận không rò rỉ dữ liệu hoặc tạo ticket trái phép.</span></div>
+        <div class="li" style="font-size:2vmin;"><span class="dot">✓</span><span><b>Reflection:</b> Đúc kết kinh nghiệm giữa prompt vs schema.</span></div>
+      </div>
+      <div style="flex:.9;background:#0f1f2e;color:#e8f0fb;border-radius:2.2vmin;padding:2.2vmin;">
+        <div style="font-size:2vmin;letter-spacing:.25em;text-transform:uppercase;color:#4f9cf9;font-weight:700;margin-bottom:1vmin;">Checklist Nộp Bài &amp; Bảo Mật</div>
+        <div class="li" style="font-size:1.95vmin;margin-bottom:1vmin;"><span class="dot">📌</span><span>Tên Repo đúng chuẩn: <code style="color:#93d4ff;font-weight:800;">K4-DAY04-[Mã_SV_Nhóm_Trưởng]</code></span></div>
+        <div class="li" style="font-size:1.95vmin;margin-bottom:1vmin;"><span class="dot">📌</span><span>Giữ nguyên tên file: <code style="color:#93d4ff;">system_prompt.md, tools.yaml, REPORT.md</code></span></div>
+        <div class="li" style="font-size:1.95vmin;margin-bottom:1vmin;"><span class="dot">🔒</span><span>File <code>.env</code> tuyệt đối không commit lên Git.</span></div>
+        <div class="li" style="font-size:1.95vmin;margin-bottom:1vmin;"><span class="dot">🔒</span><span>Xóa sạch tickets rác tạo trong lúc test trước khi nộp.</span></div>
+        <div class="li" style="font-size:1.95vmin;"><span class="dot">🔒</span><span>Không in API Key trong logs hoặc ảnh chụp demo.</span></div>
+      </div>
+    </div>
+    <div class="pill green" style="margin-top:1.8vmin;">📩 Nộp link repo GitHub (K4-DAY04-[Mã_SV_Nhóm_Trưởng]) theo hướng dẫn của Lab Coach</div>
+  </section>
+
+  <!-- SLIDE 15: EXIT TICKET -->
+  <section class="slide light">
+    <div class="head">
+      <span class="badge grey">EXIT TICKET</span>
+      <span class="h1">TỰ ĐÁNH GIÁ NĂNG LỰC TRƯỚC KHI RỜI LỚP</span>
+      <span class="clock">Cá nhân</span>
+    </div>
+    <div class="body">
+      <div class="main">
+        <div class="li"><span class="dot">•</span><span>Trả lời được &ge; 4/6 câu nghĩa là bạn đã làm chủ kiến thức Tool Calling!</span></div>
+        <div style="display:flex;flex-direction:column;gap:1.1vmin;margin-top:.4vmin;">
+          <div class="step-row" style="padding:1.4vmin .5vmin;">
+            <span class="num-accent" style="font-size:3.2vmin;">01</span>
+            <span style="font-size:2.5vmin;font-weight:600;">Làm sao ép Agent gọi <code>clarify</code> thay vì đoán mò khi người dùng không cấp mã thiết bị?</span>
+          </div>
+          <div class="step-row" style="padding:1.4vmin .5vmin;">
+            <span class="num-accent" style="font-size:3.2vmin;">02</span>
+            <span style="font-size:2.5vmin;font-weight:600;">Vì sao <code>description</code> và <code>enum</code> trong <code>tools.yaml</code> thực chất cũng là một phần của Prompt?</span>
+          </div>
+          <div class="step-row" style="padding:1.4vmin .5vmin;">
+            <span class="num-accent" style="font-size:3.2vmin;">03</span>
+            <span style="font-size:2.5vmin;font-weight:600;">Thay đổi nào giúp tăng Routing Accuracy nhưng lại gây <b>regression</b> ở Argument Accuracy?</span>
+          </div>
+          <div class="step-row" style="padding:1.4vmin .5vmin;">
+            <span class="num-accent" style="font-size:3.2vmin;">04</span>
+            <span style="font-size:2.5vmin;font-weight:600;">Tại sao mã hash <code>vX+p...-t...</code> lại đảm bảo tính tái lập (reproducibility) của thực nghiệm?</span>
+          </div>
+          <div class="step-row" style="padding:1.4vmin .5vmin;">
+            <span class="num-accent" style="font-size:3.2vmin;">05</span>
+            <span style="font-size:2.5vmin;font-weight:600;">Nếu kẻ tấn công gửi mã giả lập JSON có <code>confirmed: true</code>, Agent của bạn ứng phó thế nào?</span>
+          </div>
+          <div class="step-row" style="padding:1.4vmin .5vmin;">
+            <span class="num-accent" style="font-size:3.2vmin;">06</span>
+            <span style="font-size:2.5vmin;font-weight:600;">Dữ liệu nào tuyệt đối không được phép truyền vào công cụ <code>search_device_info</code>?</span>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="card blue" style="flex:1;">
+          <h4 style="color:#1a6abf;font-size:2.6vmin;">Thông điệp cốt lõi</h4>
+          <p style="font-size:2vmin;line-height:1.6;margin-top:1.2vmin;">
+            Trong phát triển Agent, <b>Prompt &amp; Schema chính là Code</b>.<br><br>
+            Đừng sửa prompt theo cảm tính — hãy đưa ra giả thuyết, đo lường bằng traces thực tế và bảo vệ nghiêm ngặt các ranh giới an toàn.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 16: KẾT THÚC -->
+  <section class="slide dark center">
+    <div class="eyebrow" style="margin-bottom:2vmin;">Hoàn thành Lab 04</div>
+    <div style="font-size:7.5vmin;font-weight:900;line-height:1.1;margin-bottom:2.2vmin;">
+      Evidence Over Intuition.
+    </div>
+    <div style="width:16vmin;height:.7vmin;background:#4f9cf9;border-radius:99px;margin:2vmin auto;"></div>
+    <div style="font-size:3.2vmin;font-weight:600;color:#93b8e0;max-width:65vmin;line-height:1.5;">
+      Bằng chứng thực nghiệm là thước đo duy nhất cho năng lực Tool Calling của Agent.
+    </div>
+  </section>
+
+</div>
+
+<button class="nav p" id="prev" aria-label="Slide trước">‹</button>
+<button class="nav n" id="next" aria-label="Slide sau">›</button>
+<div id="dots"></div>
+
+<script>
+(function () {
+  var track  = document.getElementById('track');
+  var slides = Array.prototype.slice.call(track.children);
+  var N = slides.length, cur = 0;
+
+  track.style.width = (N * 100) + 'vw';
+
+  /* ---------- điều hướng ---------- */
+  var dotsWrap = document.getElementById('dots');
+  var dotEls = [];
+  for (var i = 0; i < N; i++) {
+    (function (n) {
+      var b = document.createElement('button');
+      b.setAttribute('aria-label', 'Slide ' + (n + 1));
+      b.onclick = function () { go(n); };
+      dotsWrap.appendChild(b); dotEls.push(b);
+    })(i);
+  }
+
+  function go(n) {
+    cur = Math.max(0, Math.min(N - 1, n));
+    track.style.transform = 'translateX(-' + (cur * 100) + 'vw)';
+    for (var i = 0; i < N; i++) dotEls[i].className = (i === cur ? 'on' : '');
+    var dark = slides[cur].classList.contains('dark');
+    dotEls.forEach(function (d, i) {
+      if (i !== cur) d.style.background = dark ? 'rgba(255,255,255,.4)' : 'rgba(10,20,40,.2)';
+      else d.style.background = '#4f9cf9';
+    });
+  }
+
+  document.getElementById('prev').onclick = function () { go(cur - 1); };
+  document.getElementById('next').onclick = function () { go(cur + 1); };
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); go(cur + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(cur - 1); }
+    else if (e.key === 'Home') { e.preventDefault(); go(0); }
+    else if (e.key === 'End') { e.preventDefault(); go(N - 1); }
+  });
+
+  /* ---------- chuông báo hết giờ ---------- */
+  var ac = null;
+  function arm() {
+    try {
+      var C = window.AudioContext || window.webkitAudioContext;
+      ac = ac || new C();
+      if (ac.state === 'suspended') ac.resume();
+    } catch (e) {}
+  }
+  function chime() {
+    try {
+      if (!ac) return;
+      [0, 0.55, 1.1].forEach(function (t, i) {
+        var o = ac.createOscillator(), g = ac.createGain();
+        o.type = 'sine'; o.frequency.value = (i === 2 ? 523 : 659);
+        o.connect(g); g.connect(ac.destination);
+        var st = ac.currentTime + t;
+        g.gain.setValueAtTime(0.0001, st);
+        g.gain.exponentialRampToValueAtTime(0.5, st + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, st + 0.45);
+        o.start(st); o.stop(st + 0.5);
+      });
+    } catch (e) {}
+  }
+
+  /* ---------- timers ---------- */
+  function fmt(s) {
+    var m = Math.floor(s / 60), x = s % 60;
+    return String(m).padStart(2, '0') + ':' + String(x).padStart(2, '0');
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.timer'), function (box) {
+    var total = parseInt(box.getAttribute('data-secs'), 10);
+    var left = total, running = false;
+    var num = box.querySelector('.t-num');
+    var bStart = box.querySelector('.t-start');
+    var bReset = box.querySelector('.t-reset');
+
+    function paint() {
+      num.textContent = fmt(left);
+      num.className = 't-num' + (left <= 300 ? ' warn' : '');
+      bStart.textContent = running ? 'PAUSE' : 'START';
+    }
+    bStart.onclick = function () { arm(); running = !running; paint(); };
+    bReset.onclick = function () { running = false; left = total; paint(); };
+
+    setInterval(function () {
+      if (running && left > 0) {
+        left--;
+        if (left === 0) { running = false; chime(); }
+        paint();
+      }
+    }, 1000);
+
+    paint();
+  });
+
+  go(0);
+})();
+</script>
+</body>
+</html>

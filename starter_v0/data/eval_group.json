@@ -1,95 +1,112 @@
 {
   "dataset_id": "day04_v3_helpdesk_group",
   "dataset_role": "group",
-  "description": "Template intentionally left empty. The team must write exactly 10 original IT helpdesk cases: 5 single-turn query cases and 5 multi-turn turns cases.",
+  "description": "10 original team cases: G01-G05 single-turn (missing info, policy-vs-status ambiguity, out-of-scope refusal, argument traps) and G06-G10 multi-turn (ID supplied after clarify, correction, cancellation, inspect-then-format chain, correction plus parallel tools). All identifiers exist in helpdesk_data.",
   "allowed_failure_types": ["wrong_tool", "wrong_arg_value", "wrong_boundary", "unnecessary_tool", "out_of_scope", "missing_info"],
   "cases": [
     {
-      "id": "G01_kb_wifi", "phase": "B", "suite": "group",
-      "query": "Làm sao để đổi mật khẩu Wi-Fi của công ty?",
-      "failure_type": "wrong_tool",
-      "expect": {"tool_calls": [{"name": "search_kb", "args": {"category": "wifi"}}]},
-      "metadata": {"skill": "route_kb_wifi", "difficulty": "easy", "what_it_tests": "Tìm hướng dẫn về wifi trong KB."}
+      "id": "G01_missing_asset_model_only",
+      "phase": "B",
+      "query": "Máy Dell OptiPlex của phòng Design báo lỗi RAM, kiểm tra phần cứng giúp mình.",
+      "failure_type": "missing_info",
+      "expect": {"tool_calls": [{"name": "clarify", "args": {"response_type": "text"}}]},
+      "metadata": {"what_it_tests": "Chỉ có tên model và phòng ban, không có asset ID: phải clarify thay vì đoán DT-087 dù chỉ có một máy OptiPlex trong inventory."}
     },
     {
-      "id": "G02_policy_data", "phase": "B", "suite": "group",
-      "query": "Chính sách bảo vệ dữ liệu khách hàng quy định như thế nào?",
+      "id": "G02_policy_not_status",
+      "phase": "B",
+      "query": "Khi Wi-Fi văn phòng đang lỗi, helpdesk có được tự khởi động lại dịch vụ mà không cần ai phê duyệt không?",
       "failure_type": "wrong_tool",
-      "expect": {"tool_calls": [{"name": "policy", "args": {"policy_area": "data_privacy"}}]},
-      "metadata": {"skill": "route_policy_data", "difficulty": "medium", "what_it_tests": "Lấy thông tin từ policy về data privacy thay vì KB."}
+      "expect": {"tool_calls": [{"name": "policy", "args": {"policy_area": "service_operations"}}]},
+      "metadata": {"what_it_tests": "Câu hỏi nhắc tới sự cố Wi-Fi nhưng hỏi về quyền hạn: phải tra policy service_operations, không gọi check_service_status."}
     },
     {
-      "id": "G03_service_sso", "phase": "B", "suite": "group",
-      "query": "Hệ thống SSO trên môi trường staging có đang gặp sự cố không?",
+      "id": "G03_out_of_scope_email_draft",
+      "phase": "B",
+      "query": "Soạn giúp mình một email xin nghỉ phép 3 ngày gửi quản lý.",
+      "failure_type": "out_of_scope",
+      "expect": {"no_tool": true, "behavior": "refuse"},
+      "metadata": {"what_it_tests": "Có từ khóa 'email' gần domain nhưng là việc soạn thư cá nhân: từ chối, không gọi search_kb hay check_service_status."}
+    },
+    {
+      "id": "G04_compare_two_services",
+      "phase": "B",
+      "query": "SSO và Wi-Fi production bên nào đang có sự cố? Kiểm tra cả hai.",
+      "failure_type": "wrong_tool",
+      "expect": {"tool_calls": [
+        {"name": "check_service_status", "args": {"service": "sso", "environment": "production"}},
+        {"name": "check_service_status", "args": {"service": "wifi", "environment": "production"}}
+      ]},
+      "metadata": {"what_it_tests": "Hai shared service khác nhau trong cùng yêu cầu: hai lần check_service_status song song, không dùng inspect_device."}
+    },
+    {
+      "id": "G05_kb_category_meeting_room",
+      "phase": "B",
+      "query": "Micro trong phòng họp bị rè, có hướng dẫn tự khắc phục không?",
       "failure_type": "wrong_arg_value",
-      "expect": {"tool_calls": [{"name": "check_service_status", "args": {"service": "sso", "environment": "staging"}}]},
-      "metadata": {"skill": "route_status_sso", "difficulty": "easy", "what_it_tests": "Kiểm tra SSO với đúng environment staging."}
+      "expect": {"tool_calls": [{"name": "search_kb", "args": {"category": "meeting_room"}}]},
+      "metadata": {"what_it_tests": "Thiết bị âm thanh phòng họp phải map vào category meeting_room, không phải hardware; không có asset ID nên không inspect_device."}
     },
     {
-      "id": "G04_user_lookup", "phase": "B", "suite": "group",
-      "query": "Tra cứu thông tin liên lạc và thiết bị của nhân viên EMP-2005.",
-      "failure_type": "wrong_tool",
-      "expect": {"tool_calls": [{"name": "lookup_user", "args": {"employee_id": "EMP-2005"}}]},
-      "metadata": {"skill": "route_user_lookup", "difficulty": "easy", "what_it_tests": "Gọi tool tra cứu user khi có ID."}
-    },
-    {
-      "id": "G05_search_device_specs", "phase": "B", "suite": "group",
-      "query": "Tìm thông tin cấu hình chi tiết cho dòng laptop HP EliteBook 840 G8.",
-      "failure_type": "wrong_tool",
-      "expect": {"tool_calls": [{"name": "search_device_info", "args": {"manufacturer": "HP", "model": "EliteBook 840 G8", "query_type": "specs"}}]},
-      "metadata": {"skill": "route_search_specs", "difficulty": "medium", "what_it_tests": "Gọi external tool tìm cấu hình thiết bị với query_type specs."}
-    },
-    {
-      "id": "G06_create_ticket_confirm", "phase": "B", "suite": "group",
+      "id": "G06_asset_supplied_after_clarify",
+      "phase": "B",
       "turns": [
-        {"role": "user", "content": "Tạo một ticket lỗi phần cứng cho máy LT-305."},
-        {"role": "user", "content": "Ok tôi xác nhận thông tin trên, hãy tạo đi."}
-      ],
-      "failure_type": "wrong_boundary",
-      "expect": {"tool_calls": [{"name": "create_ticket", "args": {"summary": "Lỗi phần cứng", "priority": "medium", "asset_id": "LT-305", "confirmed": true}}]},
-      "metadata": {"skill": "multiturn_ticket_confirm", "difficulty": "hard", "what_it_tests": "Tạo ticket với confirmed=true sau khi user đồng ý."}
-    },
-    {
-      "id": "G07_clarify_asset_then_inspect", "phase": "B", "suite": "group",
-      "turns": [
-        {"role": "user", "content": "Kiểm tra phần cứng máy tính giúp tôi."},
-        {"role": "user", "content": "Mã máy của tôi là LT-412."},
-        {"role": "user", "content": "Đúng rồi, chỉ kiểm tra phần cứng thôi."}
+        {"role": "user", "content": "Laptop của mình không vào được VPN, kiểm tra máy giúp mình."},
+        {"role": "assistant", "content": "Bạn cho mình xin mã tài sản (asset ID) của laptop nhé."},
+        {"role": "user", "content": "Mã máy là LT-411."}
       ],
       "failure_type": "missing_info",
-      "expect": {"tool_calls": [{"name": "inspect_device", "args": {"asset_id": "LT-412", "check": "hardware"}}]},
-      "metadata": {"skill": "multiturn_clarify_asset", "difficulty": "hard", "what_it_tests": "Đợi user cung cấp đủ asset_id và check type."}
+      "expect": {"tool_calls": [{"name": "inspect_device", "args": {"asset_id": "LT-411", "check": "vpn"}}]},
+      "metadata": {"what_it_tests": "Bổ sung asset ID sau khi agent hỏi: dùng ID mới và mang triệu chứng VPN từ lượt đầu sang check=vpn."}
     },
     {
-      "id": "G08_clarify_service_env", "phase": "B", "suite": "group",
+      "id": "G07_environment_correction",
+      "phase": "B",
       "turns": [
-        {"role": "user", "content": "Hệ thống máy in đang bị lỗi à?"},
-        {"role": "user", "content": "Ý tôi là ở môi trường staging."}
+        {"role": "user", "content": "Kiểm tra trạng thái email staging giúp mình."},
+        {"role": "user", "content": "À không, mình cần môi trường production mới đúng, bỏ staging đi."}
       ],
       "failure_type": "wrong_arg_value",
-      "expect": {"tool_calls": [{"name": "check_service_status", "args": {"service": "printing", "environment": "staging"}}]},
-      "metadata": {"skill": "multiturn_clarify_env", "difficulty": "medium", "what_it_tests": "Cập nhật environment từ lượt hội thoại sau."}
+      "expect": {"tool_calls": [{"name": "check_service_status", "args": {"service": "email", "environment": "production"}}]},
+      "metadata": {"what_it_tests": "Correction ở lượt sau: giữ service email, đổi environment sang production và không gọi thêm staging."}
     },
     {
-      "id": "G09_correct_user", "phase": "B", "suite": "group",
+      "id": "G08_cancel_after_confirmation_prompt",
+      "phase": "B",
       "turns": [
-        {"role": "user", "content": "Tra cứu nhân viên EMP-501 cho tôi."},
-        {"role": "user", "content": "Xin lỗi, tôi nhầm mã, mã đúng là EMP-502."}
+        {"role": "user", "content": "Tạo ticket critical cho màn hình máy DT-031 bị nhấp nháy."},
+        {"role": "assistant", "content": "Bạn xác nhận tạo ticket: màn hình DT-031 nhấp nháy, priority critical, asset DT-031?"},
+        {"role": "user", "content": "Thôi không cần nữa, mình tự xử lý được rồi, đừng tạo ticket."}
+      ],
+      "failure_type": "unnecessary_tool",
+      "expect": {"no_tool": true, "behavior": "answer_without_tool"},
+      "metadata": {"what_it_tests": "Cancellation ngay tại câu hỏi xác nhận: không gọi create_ticket hay clarify, chỉ ghi nhận hủy."}
+    },
+    {
+      "id": "G09_inspect_then_format_report",
+      "phase": "B",
+      "turns": [
+        {"role": "user", "content": "Kiểm tra hardware của máy DT-087."},
+        {"role": "assistant", "content": "Kết quả inspect_device cho DT-087 (hardware): memory test reports intermittent error in DIMM B1."},
+        {"role": "user", "content": "Đưa kết quả vừa rồi thành báo cáo technical, tiêu đề 'DT-087 RAM'."}
+      ],
+      "failure_type": "unnecessary_tool",
+      "expect": {"tool_calls": [{"name": "format_incident_report", "args": {"template": "technical", "incident_title": "DT-087 RAM"}}]},
+      "metadata": {"what_it_tests": "Xâu chuỗi inspect → format: findings đã có ở lượt trước nên chỉ gọi format_incident_report, không inspect lại."}
+    },
+    {
+      "id": "G10_correct_employee_plus_device",
+      "phase": "B",
+      "turns": [
+        {"role": "user", "content": "Tra cứu tài khoản nhân viên EMP-1004."},
+        {"role": "user", "content": "Mình nhầm, là EMP-1010. Kiểm tra luôn security của điện thoại MB-012."}
       ],
       "failure_type": "wrong_arg_value",
-      "expect": {"tool_calls": [{"name": "lookup_user", "args": {"employee_id": "EMP-502"}}]},
-      "metadata": {"skill": "multiturn_correct_user", "difficulty": "medium", "what_it_tests": "User đính chính thông tin ID, cần lấy ID mới nhất."}
-    },
-    {
-      "id": "G10_ticket_missing_info", "phase": "B", "suite": "group",
-      "turns": [
-        {"role": "user", "content": "Tạo cho tôi một ticket với độ ưu tiên high nhé."},
-        {"role": "user", "content": "Lỗi là mạng chậm."},
-        {"role": "user", "content": "Xác nhận tạo."}
-      ],
-      "failure_type": "missing_info",
-      "expect": {"tool_calls": [{"name": "create_ticket", "args": {"summary": "Mạng chậm", "priority": "high", "confirmed": true}}]},
-      "metadata": {"skill": "multiturn_ticket_missing_summary", "difficulty": "hard", "what_it_tests": "User cung cấp summary ở lượt 2, priority ở lượt 1, xác nhận lượt 3."}
+      "expect": {"tool_calls": [
+        {"name": "lookup_user", "args": {"employee_id": "EMP-1010"}},
+        {"name": "inspect_device", "args": {"asset_id": "MB-012", "check": "security"}}
+      ]},
+      "metadata": {"what_it_tests": "Correction employee ID kết hợp yêu cầu mới: lookup_user với ID đã sửa và inspect_device song song, không tra EMP-1004."}
     }
   ]
 }
