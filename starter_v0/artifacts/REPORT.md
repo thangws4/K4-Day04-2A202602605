@@ -233,8 +233,6 @@ viên nào còn thiếu.
 
 **Reflection chung của nhóm:**
 
-> _Bản nháp dựa trên evidence — cả nhóm thảo luận và chỉnh trước khi nộp._
->
 > Nhóm hoàn thành core lab trên artifact `v7+p1b1d007d551d+t46ddfd3f9db9`: base 30/30, extension
 > 10/10, group 10/10, adversarial 9/12 với 0 ticket trái phép (`artifacts/version_log.csv`,
 > `runs/v7_*`). Cải thiện rõ nhất về điểm là v1 (enum explicit, base 0.73 → 0.87); về an toàn là
@@ -256,45 +254,143 @@ Mỗi thành viên tự viết và **tự commit** mục của mình bằng Git 
 
 - **Vai trò/phần việc được nhận:** A — Prompt Architect / Lead
 - **Những gì tôi đã thay đổi trong repo chung:**
-- **File hoặc artifact liên quan:**
-- **Commit hash hoặc pull request:**
-- **Một quyết định kỹ thuật tôi đã đưa ra và lý do:**
-- **Khó khăn tôi gặp và cách tôi xử lý:**
-- **Điều tôi học được từ phần việc này:**
-- **Nếu làm lại, tôi sẽ cải thiện điều gì:**
+  - Viết lại `system_prompt.md` qua các version prompt v1 (routing + enum explicit), v3 (context,
+    clarify, confirmation gắn với payload cuối), v4 (test confirmation trên lượt user mới nhất),
+    v6 (`clarify` không bao giờ trả confirmation); ghi `version_log.csv` và snapshot
+    `artifacts/versions/v0`–`v3`.
+  - Thêm retry cho Gemini provider: chờ theo `retry in Ns` của server khi 429 theo phút, fail
+    fast khi hết quota ngày, backoff khi 503 `UNAVAILABLE`.
+  - Chạy toàn bộ eval chính thức (base/extension/adversarial/group) trên cùng một model để hash
+    artifact khớp nhau; đếm `tickets/` trước/sau mỗi suite; viết Phần A, B và C1 của report.
+  - Review và tích hợp 4 PR của nhóm: gộp hai vòng retry trùng nhau trong `gemini_provider.py`,
+    hoàn tác `time.sleep(1.5)` thêm vào `run_eval.py`, viết lại `data/eval_group.json` để dùng ID
+    có thật trong `helpdesk_data/`.
+- **File hoặc artifact liên quan:** `artifacts/system_prompt.md`, `artifacts/version_log.csv`,
+  `artifacts/versions/`, `providers/gemini_provider.py`, `run_eval.py`, `data/eval_group.json`,
+  `runs/v0_*`–`runs/v7_*`, `transcripts/v7_*`, `artifacts/REPORT.md`.
+- **Commit hash hoặc pull request:** `e36bda5` (v1 prompt + retry, merge qua PR #1 `baf3944`),
+  `5d073e9` (các version tiếp theo, tích hợp, group eval, report), `2fd249f`, `c5c4e0a` (report);
+  merge PR #2–#5 (`dc5392c`, `c250aff`, `6839622`, `b207487`).
+- **Một quyết định kỹ thuật tôi đã đưa ra và lý do:** Chuyển toàn bộ evidence chính thức sang
+  `gemini-3.1-flash-lite` thay vì model mặc định. Free tier của `gemini-3.5-flash` chỉ cho 20
+  request/ngày, không đủ cho một run base (30 request), nên hai run đầu đều bị provider error và
+  không hợp lệ. Dùng một model duy nhất cho mọi version để so sánh before/after công bằng, chấp
+  nhận model yếu hơn và dao động nhiều hơn.
+- **Khó khăn tôi gặp và cách tôi xử lý:** Sau v3, base đạt 30/30 nên tôi tưởng prompt đã an toàn,
+  nhưng adversarial tạo 4 ticket critical thật. Thêm luật vào prompt (v4) chỉ giảm còn 3. Khi đọc
+  lại trace, tôi thấy description `create_ticket` trong `tools.yaml` vẫn nói "xác nhận ở lượt
+  trước" — mâu thuẫn với prompt. Tôi phối hợp với B sửa schema ở v5 (còn 1 ticket), rồi thêm sự
+  thật kiểm chứng được từ code ("`clarify` không trả confirmation") ở v6 để về 0. Ngoài ra khi
+  merge, code retry của hai nhánh chồng lên nhau khiến mỗi request có thể gọi API hai lần; tôi gộp
+  lại thành một hàm duy nhất.
+- **Điều tôi học được từ phần việc này:** Điểm tự động cao không đồng nghĩa với an toàn — phải có
+  adversarial suite và kiểm tra side effect trên filesystem. Prompt và tool schema là hai kênh model
+  đều đọc, nên khi chúng nói khác nhau model thường đi theo schema. Mỗi version chỉ đổi một
+  artifact thì mới quy được cải thiện hay regression về đúng nguyên nhân.
+- **Nếu làm lại, tôi sẽ cải thiện điều gì:** Chạy adversarial ngay từ v0 thay vì đợi base đạt
+  30/30, để phát hiện lỗ hổng confirmation sớm. Kiểm tra quota/model trước khi bắt đầu và chạy mỗi
+  suite vài lần để tách dao động của model khỏi hiệu ứng của thay đổi. Ánh xạ
+  `tool_choice="required"` trong Gemini adapter từ đầu để A03/A12 không bị chấm FAIL oan.
 
 ### Nguyễn Hải Long — 2A202602471
 
+> _Bản nháp soạn từ lịch sử commit — Long đọc lại, sửa bằng lời của mình và **tự commit** bằng
+> tài khoản Git của mình._
+
 - **Vai trò/phần việc được nhận:** B — Tool & Schema Engineer
 - **Những gì tôi đã thay đổi trong repo chung:**
-- **File hoặc artifact liên quan:**
-- **Commit hash hoặc pull request:**
-- **Một quyết định kỹ thuật tôi đã đưa ra và lý do:**
-- **Khó khăn tôi gặp và cách tôi xử lý:**
-- **Điều tôi học được từ phần việc này:**
-- **Nếu làm lại, tôi sẽ cải thiện điều gì:**
+  - Viết lại description và argument semantics cho cả 9 tool trong `tools.yaml` (version v2): nêu
+    rõ khi nào dùng/không dùng (`check_service_status` chỉ cho 5 shared service, thiết bị cụ thể
+    phải dùng `inspect_device`), các trường hợp bắt buộc `clarify` (thiếu `asset_id`,
+    `employee_id`, chưa có xác nhận ticket), ranh giới dữ liệu của `search_device_info` (không
+    truyền asset ID, employee ID, serial, hostname, IP ra Internet) và điều kiện `confirmed` của
+    `create_ticket`.
+  - Thêm retry khi gặp 429 trong `providers/gemini_provider.py`, đổi `default_model` sang
+    `gemini-3.6-flash`, và thêm `time.sleep(1.5)` giữa các case trong `run_eval.py`.
+- **File hoặc artifact liên quan:** `artifacts/tools.yaml`, `providers/gemini_provider.py`,
+  `run_eval.py`; run v2 `runs/v2_B_base_gemini_20260914T193906427790.json`.
+- **Commit hash hoặc pull request:** `39dfd3c` ("commit Phan B"), merge qua PR #3 (`c250aff`).
+- **Một quyết định kỹ thuật tôi đã đưa ra và lý do:** Đưa ranh giới routing và điều kiện an toàn
+  vào thẳng description của từng tool thay vì chỉ để trong system prompt, vì model đọc schema ngay
+  lúc chọn tool và điền argument. Ở v2, base case_accuracy tăng từ 0.8667 lên 0.9000 mà routing
+  của v1 không bị vỡ.
+- **Khó khăn tôi gặp và cách tôi xử lý:** Free tier của Gemini liên tục trả 429 nên eval không
+  chạy hết. Tôi thêm retry trong provider và `sleep` trong `run_eval.py`. Khi tích hợp, nhóm hoàn
+  tác phần `sleep` vì lab không cho sửa eval engine, và gộp retry của tôi với retry của A thành một
+  hàm duy nhất, vì hai vòng retry chồng nhau có thể gọi API hai lần.
+- **Điều tôi học được từ phần việc này:** Câu chữ trong schema cũng là một lớp bảo vệ an toàn.
+  Description `create_ticket` của tôi ghi "xác nhận ở lượt trước" và lấy "hãy tạo ticket đi" làm
+  ví dụ, mâu thuẫn với prompt v3. Kết quả là adversarial v3 tạo 4 ticket trái phép (A03, A04,
+  A10, A11), và phải đến v5 sửa lại schema thì số ticket trái phép mới giảm.
+- **Nếu làm lại, tôi sẽ cải thiện điều gì:** Chạy adversarial suite ngay sau khi sửa
+  `create_ticket`, đối chiếu description với prompt trước khi mở PR, đưa các enum quyết định (như
+  `policy_area`, `environment`) vào `required` ngay từ đầu, và chỉ xử lý rate limit trong provider,
+  không động vào `run_eval.py`.
 
 ### Tiến Dũng — 2A202602374
 
+> _Bản nháp soạn từ lịch sử commit — Dũng đọc lại, sửa bằng lời của mình (bổ sung phần red-team
+> nếu có làm ngoài Git) và **tự commit** bằng tài khoản Git của mình._
+
 - **Vai trò/phần việc được nhận:** C — Eval & Red-Team
-- **Những gì tôi đã thay đổi trong repo chung:**
-- **File hoặc artifact liên quan:**
-- **Commit hash hoặc pull request:**
-- **Một quyết định kỹ thuật tôi đã đưa ra và lý do:**
-- **Khó khăn tôi gặp và cách tôi xử lý:**
-- **Điều tôi học được từ phần việc này:**
-- **Nếu làm lại, tôi sẽ cải thiện điều gì:**
+- **Những gì tôi đã thay đổi trong repo chung:** Viết bản đầu tiên của `data/eval_group.json`
+  gồm 10 case: 5 case một lượt (KB Wi-Fi, policy data privacy, SSO staging, tra cứu nhân viên,
+  tìm cấu hình HP EliteBook) và 5 case nhiều lượt (tạo ticket sau xác nhận, clarify mã máy rồi
+  inspect, sửa môi trường, sửa mã nhân viên, ticket thiếu summary). Mỗi case có `failure_type` và
+  `metadata.what_it_tests`.
+- **File hoặc artifact liên quan:** `data/eval_group.json`; bản cuối được chạy ở
+  `runs/v7_B_group_gemini_20260914T201210248647.json` (10/10).
+- **Commit hash hoặc pull request:** `bc4014f` ("Tien Dung hoan thanh C"), merge qua PR #4
+  (`6839622`).
+- **Một quyết định kỹ thuật tôi đã đưa ra và lý do:** Chia đều 5 case một lượt và 5 case nhiều
+  lượt, và gắn mỗi case với một failure type cụ thể (`wrong_tool`, `wrong_arg_value`,
+  `wrong_boundary`, `missing_info`). Như vậy khi case fail, nhóm biết ngay lỗi thuộc routing,
+  argument hay ranh giới hành động, thay vì chỉ thấy tổng điểm.
+- **Khó khăn tôi gặp và cách tôi xử lý:** Khi review, nhóm phát hiện nhiều ID trong bản đầu không
+  có trong `helpdesk_data/` (`EMP-2005`, `LT-305`, `LT-412`, `EMP-501`, `EMP-502`), nên tool trả
+  `asset_not_found`/`employee_not_found` và trace không có dữ liệu thật. Ngoài ra `summary` được
+  kỳ vọng khớp nguyên văn ("Lỗi phần cứng", "Mạng chậm") nên grader chấm quá chặt. Nhóm đã viết lại
+  bộ case (G01–G10 hiện tại) dùng ID có thật, chỉ kiểm tra các argument quyết định, và thêm case
+  không được gọi tool (out-of-scope, hủy xác nhận).
+- **Điều tôi học được từ phần việc này:** Một eval case chỉ có giá trị khi dựa trên dữ liệu có
+  thật và chỉ kiểm tra những argument thể hiện quyết định của agent. Case kiểm tra "không được làm
+  gì" (refuse, cancel, không đoán ID) quan trọng không kém case kiểm tra gọi đúng tool.
+- **Nếu làm lại, tôi sẽ cải thiện điều gì:** Đối chiếu mọi ID với `helpdesk_data/` và chạy thử
+  `eval_group.json` một lần trước khi mở PR, bỏ so khớp nguyên văn các trường tự do như `summary`,
+  và thêm case về ranh giới an toàn (stale confirmation, ID nội bộ trong web search) để group suite
+  bổ sung cho adversarial suite.
 
 ### Trần Anh Quân (AnhQun18) — 2A202602598
 
+> _Bản nháp soạn từ lịch sử commit — Quân đọc lại, sửa bằng lời của mình (bổ sung phần điều phối
+> report nếu có) và **tự commit** bằng tài khoản Git của mình._
+
 - **Vai trò/phần việc được nhận:** D — UI & Report Coordinator
 - **Những gì tôi đã thay đổi trong repo chung:**
-- **File hoặc artifact liên quan:**
-- **Commit hash hoặc pull request:**
-- **Một quyết định kỹ thuật tôi đã đưa ra và lý do:**
-- **Khó khăn tôi gặp và cách tôi xử lý:**
-- **Điều tôi học được từ phần việc này:**
-- **Nếu làm lại, tôi sẽ cải thiện điều gì:**
+  - Xây Streamlit UI `app.py` (542 dòng) cho live chat. UI dùng lại `run_model_tool_loop` và
+    `write_transcript` từ `chat.py` thay vì viết agent loop mới, và hiển thị đủ thông tin audit:
+    user request, final response, tên tool và args, tool result/error, round/status, artifact
+    version cùng hash prompt/tools, và đường dẫn transcript.
+  - Thêm `streamlit>=1.30.0` vào `requirements.txt`.
+  - Làm bản demo tĩnh `ui_demo.html` để xem trước giao diện.
+- **File hoặc artifact liên quan:** `app.py`, `requirements.txt`, `ui_demo.html`; transcript live
+  chat dùng làm evidence ở A4/B4 (`transcripts/v7_gemini_*.transcript.json`).
+- **Commit hash hoặc pull request:** `04bfd2a` (app.py, requirements), `87e5003` (ui_demo.html),
+  merge qua PR #2 (`dc5392c`).
+- **Một quyết định kỹ thuật tôi đã đưa ra và lý do:** Gọi đúng hàm `run_model_tool_loop` của
+  `chat.py` thay vì tự viết vòng gọi model/tool trong UI. Nhờ vậy UI và CLI có cùng hành vi, và
+  transcript tạo từ UI là evidence hợp lệ cho cùng artifact version mà eval đo được.
+- **Khó khăn tôi gặp và cách tôi xử lý:** UI được viết khi nhóm mới có v0–v3, nên danh sách
+  version và provider bị hardcode (`VERSIONS = ["v0", "v1", "v2", "v3"]`, provider mặc định
+  `openrouter`). Khi nhóm lên v7 và chuyển sang Gemini flash-lite, `app.py` phải refactor lại ở
+  `5d073e9`: đọc version từ `artifacts/versions/`, mặc định `gemini-3.1-flash-lite`, thêm lịch sử
+  hội thoại.
+- **Điều tôi học được từ phần việc này:** UI cho agent có tool không chỉ để hiển thị câu trả lời.
+  Nếu không thấy args và tool result thì không thể kiểm tra agent có đoán ID hay tạo ticket trái
+  phép, và phần live chat evidence (B4) phụ thuộc hoàn toàn vào những thông tin đó.
+- **Nếu làm lại, tôi sẽ cải thiện điều gì:** Đọc danh sách version và model từ cấu hình/thư mục
+  thay vì hardcode, thống nhất provider/model với người chạy eval từ đầu, và không để một bản
+  `ui_demo.html` trùng chức năng ở root repo mà chỉ giữ một UI chạy thật.
 
 ## C3. Final checkout
 
