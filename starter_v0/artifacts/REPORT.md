@@ -7,10 +7,10 @@
 
   | Vai trò | Thành viên | GitHub | MSSV |
   |---|---|---|---|
-  | A — Prompt Architect / Lead | Thắng | thangnd11 | _(điền)_ |
-  | B — Tool & Schema Engineer | Nguyễn Hải Long | _(điền)_ | _(điền)_ |
-  | C — Eval & Red-Team | Tiến Dũng | _(điền)_ | _(điền)_ |
-  | D — UI & Report Coordinator | Trần Anh Quân | AnhQun18 | _(điền)_ |
+  | A — Prompt Architect / Lead | Thắng | thangnd11 | 2A202602605 |
+  | B — Tool & Schema Engineer | Nguyễn Hải Long | long27112003 | 2A202602471 |
+  | C — Eval & Red-Team | Tiến Dũng | tiendungandrew-gif | 2A202602374 |
+  | D — UI & Report Coordinator | Trần Anh Quân | AnhQun18 | 2A202602598 |
 
 - Provider/model: `gemini` / `gemini-3.1-flash-lite`, temperature 0.
   Model mặc định `gemini-3.5-flash` ở free tier chỉ cho 20 request/ngày (một run base cần
