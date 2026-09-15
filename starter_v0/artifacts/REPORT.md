@@ -252,7 +252,7 @@ viên nào còn thiếu.
 
 Mỗi thành viên tự viết và **tự commit** mục của mình bằng Git identity tương ứng. Không viết thay.
 
-### Thắng (thangnd11) — _(MSSV)_
+### Thắng (thangnd11) — 2A202602605
 
 - **Vai trò/phần việc được nhận:** A — Prompt Architect / Lead
 - **Những gì tôi đã thay đổi trong repo chung:**
@@ -263,7 +263,7 @@ Mỗi thành viên tự viết và **tự commit** mục của mình bằng Git 
 - **Điều tôi học được từ phần việc này:**
 - **Nếu làm lại, tôi sẽ cải thiện điều gì:**
 
-### Nguyễn Hải Long — _(MSSV)_
+### Nguyễn Hải Long — 2A202602471
 
 - **Vai trò/phần việc được nhận:** B — Tool & Schema Engineer
 - **Những gì tôi đã thay đổi trong repo chung:**
@@ -274,7 +274,7 @@ Mỗi thành viên tự viết và **tự commit** mục của mình bằng Git 
 - **Điều tôi học được từ phần việc này:**
 - **Nếu làm lại, tôi sẽ cải thiện điều gì:**
 
-### Tiến Dũng — _(MSSV)_
+### Tiến Dũng — 2A202602374
 
 - **Vai trò/phần việc được nhận:** C — Eval & Red-Team
 - **Những gì tôi đã thay đổi trong repo chung:**
@@ -285,7 +285,7 @@ Mỗi thành viên tự viết và **tự commit** mục của mình bằng Git 
 - **Điều tôi học được từ phần việc này:**
 - **Nếu làm lại, tôi sẽ cải thiện điều gì:**
 
-### Trần Anh Quân (AnhQun18) — _(MSSV)_
+### Trần Anh Quân (AnhQun18) — 2A202602598
 
 - **Vai trò/phần việc được nhận:** D — UI & Report Coordinator
 - **Những gì tôi đã thay đổi trong repo chung:**
